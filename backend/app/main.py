@@ -1,6 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
+from app.routers import predict
+from app.routers import materials
 
 app = FastAPI(
     title="Space Radiation Shielding Closed-Loop System",
@@ -8,37 +9,18 @@ app = FastAPI(
     version="1.0.0",
 )
 
-# Configure CORS headers for local API communication
-origins = [
-    "http://localhost",
-    "http://localhost:8000",
-    "http://127.0.0.1",
-    "http://127.0.0.1:8000",
-    "*"  # Allows desktop client connections during development
-]
-
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Include prediction router
+app.include_router(predict.router)
+app.include_router(materials.router)
 
-class HealthCheckResponse(BaseModel):
-    status: str
-    message: str
-
-
-@app.get("/", response_model=HealthCheckResponse)
+@app.get("/")
 async def root():
-    return HealthCheckResponse(
-        status="active",
-        message="Radiation Shielding AI/Sim Engine API is running."
-    )
-
-
-@app.get("/health")
-async def health_check():
-    return {"status": "ok"}
+    return {"status": "active", "message": "Radiation Shielding Engine API is running."}
