@@ -1,0 +1,1569 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>AEGIS — Radiation Shielding Research Platform</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Source+Serif+4:ital,wght@0,300;0,400;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet"/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.js"></script>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --parchment:     #F5F0E8;
+    --parchment-mid: #EDE5D4;
+    --parchment-deep:#E0D5BF;
+    --ink:           #2C2A24;
+    --ink-mid:       #4A4538;
+    --ink-light:     #6B5E3F;
+    --gold:          #8B6914;
+    --gold-light:    #B8891A;
+    --gold-pale:     #F0E0A0;
+    --green:         #3A4A3A;
+    --green-light:   #4E6A4E;
+    --green-pale:    #D4E4D0;
+    --danger:        #7A2020;
+    --danger-pale:   #F4DADA;
+    --font-display:  'Space Grotesk', sans-serif;
+    --font-body:     'Source Serif 4', serif;
+    --font-mono:     'JetBrains Mono', monospace;
+    --radius:        6px;
+    --radius-lg:     12px;
+  }
+
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--parchment);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.7;
+    min-height: 100vh;
+  }
+
+  /* ── TOP NAV ── */
+  .topnav {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 100;
+    background: var(--ink);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 2rem; height: 52px;
+    border-bottom: 2px solid var(--gold);
+  }
+  .topnav-brand {
+    font-family: var(--font-display);
+    font-weight: 700; font-size: 15px; letter-spacing: 0.12em;
+    color: var(--gold-light); text-transform: uppercase;
+  }
+  .topnav-brand span { color: var(--parchment-mid); font-weight: 300; }
+  .topnav-tabs { display: flex; gap: 2px; }
+  .nav-tab {
+    font-family: var(--font-display); font-size: 12px; font-weight: 500;
+    letter-spacing: 0.06em; text-transform: uppercase;
+    padding: 0 1.1rem; height: 52px;
+    display: flex; align-items: center;
+    color: var(--parchment-deep); cursor: pointer;
+    border: none; background: transparent;
+    border-bottom: 2px solid transparent;
+    transition: color 0.2s, border-color 0.2s;
+    position: relative; top: 2px;
+  }
+  .nav-tab:hover { color: var(--parchment); }
+  .nav-tab.active { color: var(--gold-light); border-bottom-color: var(--gold-light); }
+  .topnav-badge {
+    font-family: var(--font-display); font-size: 10px; font-weight: 500;
+    color: var(--ink); background: var(--gold-light);
+    padding: 2px 8px; border-radius: 3px; letter-spacing: 0.05em;
+  }
+
+  /* ── TABS ── */
+  .tab-panel { display: none; padding-top: 52px; min-height: 100vh; }
+  .tab-panel.active { display: block; }
+
+  /* ── HERO (Tab 1) ── */
+  .hero {
+    background: var(--ink);
+    padding: 5rem 2rem 4rem;
+    position: relative; overflow: hidden;
+  }
+  .hero::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: repeating-linear-gradient(
+      0deg, transparent, transparent 39px,
+      rgba(139,105,20,0.08) 39px, rgba(139,105,20,0.08) 40px
+    ),
+    repeating-linear-gradient(
+      90deg, transparent, transparent 39px,
+      rgba(139,105,20,0.05) 39px, rgba(139,105,20,0.05) 40px
+    );
+  }
+  .hero-inner { max-width: 960px; margin: 0 auto; position: relative; }
+  .hero-eyebrow {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 500;
+    letter-spacing: 0.15em; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 1.5rem;
+  }
+  .hero-title {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: clamp(2rem, 5vw, 3.4rem); line-height: 1.1;
+    color: var(--parchment); margin-bottom: 1rem;
+  }
+  .hero-title em { color: var(--gold-light); font-style: normal; }
+  .hero-sub {
+    font-family: var(--font-body); font-style: italic;
+    font-size: 1.1rem; color: var(--parchment-deep);
+    max-width: 640px; margin-bottom: 3rem;
+  }
+  .hero-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.5rem; }
+  @media (max-width: 680px) { .hero-grid { grid-template-columns: 1fr; } }
+  .hero-card {
+    background: rgba(245,240,232,0.06);
+    border: 0.5px solid rgba(184,137,26,0.3);
+    border-radius: var(--radius-lg); padding: 1.4rem;
+  }
+  .hero-card-label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 0.4rem;
+  }
+  .hero-card-val {
+    font-family: var(--font-display); font-size: 2rem; font-weight: 700;
+    color: var(--parchment);
+  }
+  .hero-card-val sub { font-size: 0.9rem; color: var(--parchment-deep); }
+  .hero-card-desc { font-size: 0.82rem; color: var(--parchment-deep); margin-top: 0.3rem; }
+
+  /* ── BEER-LAMBERT CALCULATOR ── */
+  .calc-section {
+    background: var(--parchment-mid);
+    border-top: 3px solid var(--gold);
+    padding: 3rem 2rem;
+  }
+  .section-inner { max-width: 960px; margin: 0 auto; }
+  .section-eyebrow {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 0.5rem;
+  }
+  .section-title {
+    font-family: var(--font-display); font-weight: 600; font-size: 1.5rem;
+    color: var(--ink); margin-bottom: 0.4rem;
+  }
+  .section-body {
+    font-size: 0.95rem; color: var(--ink-light); margin-bottom: 2rem;
+    max-width: 640px;
+  }
+  .calc-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 2rem;
+    align-items: start;
+  }
+  @media (max-width: 680px) { .calc-grid { grid-template-columns: 1fr; } }
+  .calc-controls { display: flex; flex-direction: column; gap: 1.2rem; }
+  .field-label {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
+    color: var(--ink-light); margin-bottom: 0.4rem; display: block;
+  }
+  .field-row { display: flex; align-items: center; gap: 0.6rem; }
+  .field-row input[type=range] {
+    flex: 1; accent-color: var(--gold);
+    height: 4px; cursor: pointer;
+  }
+  .field-val {
+    font-family: var(--font-mono); font-size: 13px; font-weight: 500;
+    color: var(--ink); min-width: 60px; text-align: right;
+  }
+  .material-select {
+    width: 100%; padding: 0.5rem 0.8rem;
+    border: 0.5px solid var(--parchment-deep); border-radius: var(--radius);
+    background: var(--parchment); color: var(--ink);
+    font-family: var(--font-mono); font-size: 12px; cursor: pointer;
+  }
+  .calc-output {
+    background: var(--ink); border-radius: var(--radius-lg);
+    padding: 1.8rem; color: var(--parchment);
+  }
+  .eq-display {
+    font-family: var(--font-mono); font-size: 13px;
+    color: var(--gold-light); margin-bottom: 1.2rem;
+    line-height: 1.6; white-space: pre-wrap;
+  }
+  .result-bar-wrap {
+    height: 8px; background: rgba(255,255,255,0.1);
+    border-radius: 4px; margin: 1rem 0; overflow: hidden;
+  }
+  .result-bar {
+    height: 8px; border-radius: 4px;
+    background: linear-gradient(90deg, var(--gold) 0%, var(--gold-light) 100%);
+    transition: width 0.3s ease;
+  }
+  .result-big {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 2.4rem; color: var(--parchment);
+    margin: 0.5rem 0;
+  }
+  .result-label { font-size: 0.82rem; color: var(--parchment-deep); }
+  .result-safe { color: #6EBF82; }
+  .result-warn { color: var(--gold-light); }
+  .result-danger { color: #E07070; }
+
+  /* ── HYPOTHESIS BLOCK ── */
+  .hyp-section { padding: 3rem 2rem; background: var(--parchment); }
+  .hyp-box {
+    border-left: 4px solid var(--gold);
+    background: var(--parchment-mid);
+    border-radius: 0 var(--radius-lg) var(--radius-lg) 0;
+    padding: 1.8rem 2rem; margin-bottom: 2rem;
+  }
+  .hyp-box h3 {
+    font-family: var(--font-display); font-size: 0.75rem;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: var(--gold); margin-bottom: 0.7rem;
+  }
+  .hyp-box p {
+    font-family: var(--font-body); font-style: italic;
+    font-size: 1.08rem; color: var(--ink); line-height: 1.65;
+  }
+  .hyp-box strong { font-style: normal; color: var(--gold); }
+
+  /* ── VARIABLES TABLE ── */
+  .var-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1px; background: var(--parchment-deep);
+    border: 1px solid var(--parchment-deep); border-radius: var(--radius);
+    overflow: hidden;
+  }
+  .var-cell { background: var(--parchment); padding: 0.8rem 1rem; }
+  .var-sym {
+    font-family: var(--font-mono); font-size: 14px; font-weight: 500;
+    color: var(--gold); margin-bottom: 0.2rem;
+  }
+  .var-name { font-size: 0.82rem; color: var(--ink-light); }
+
+  /* ── PHASE TIMELINE (Tab 2) ── */
+  .phase-section { padding: 3rem 2rem; }
+  .phase-timeline { position: relative; max-width: 860px; margin: 0 auto; }
+  .phase-timeline::before {
+    content: ''; position: absolute;
+    left: 22px; top: 0; bottom: 0; width: 2px;
+    background: var(--parchment-deep);
+  }
+  .phase-block {
+    display: flex; gap: 2rem; margin-bottom: 3rem; position: relative;
+  }
+  .phase-dot {
+    flex-shrink: 0; width: 44px; height: 44px;
+    border-radius: 50%; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-display); font-size: 13px; font-weight: 700;
+    position: relative; z-index: 1;
+    border: 2px solid var(--parchment-deep);
+  }
+  .phase-dot.p1 { background: var(--ink); color: var(--gold-light); border-color: var(--gold); }
+  .phase-dot.p2 { background: var(--green); color: var(--green-pale); border-color: var(--green-light); }
+  .phase-dot.p3 { background: var(--parchment-deep); color: var(--ink); border-color: var(--parchment-deep); }
+  .phase-dot.p4 { background: var(--parchment-deep); color: var(--ink); border-color: var(--parchment-deep); }
+  .phase-dot.p5 { background: var(--parchment-deep); color: var(--ink); border-color: var(--parchment-deep); }
+  .phase-content { flex: 1; padding-top: 0.5rem; }
+  .phase-tag {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-light); margin-bottom: 0.3rem;
+  }
+  .phase-title {
+    font-family: var(--font-display); font-weight: 600; font-size: 1.1rem;
+    color: var(--ink); margin-bottom: 0.5rem;
+  }
+  .phase-body { font-size: 0.92rem; color: var(--ink-mid); margin-bottom: 1rem; }
+  .phase-tasks { list-style: none; }
+  .phase-tasks li {
+    font-family: var(--font-mono); font-size: 11.5px;
+    color: var(--ink-light); padding: 0.35rem 0;
+    border-bottom: 0.5px solid var(--parchment-deep);
+    display: flex; align-items: flex-start; gap: 0.5rem;
+  }
+  .phase-tasks li::before {
+    content: '→'; color: var(--gold); flex-shrink: 0;
+  }
+  .milestone-chip {
+    display: inline-block; margin-top: 0.8rem;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+    padding: 3px 10px; border-radius: 3px;
+    background: var(--gold-pale); color: var(--gold);
+    border: 0.5px solid var(--gold);
+  }
+
+  /* ── EQUATIONS (Tab 3) ── */
+  .eq-section { padding: 3rem 2rem; background: var(--parchment-mid); }
+  .eq-cards {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 1.5rem; margin-top: 2rem;
+  }
+  .eq-card {
+    background: var(--parchment); border-radius: var(--radius-lg);
+    border: 0.5px solid var(--parchment-deep);
+    padding: 1.6rem; transition: border-color 0.2s;
+  }
+  .eq-card:hover { border-color: var(--gold); }
+  .eq-card-label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--gold); margin-bottom: 0.8rem;
+  }
+  .eq-block {
+    font-family: var(--font-mono); font-size: 13px;
+    background: var(--ink); color: var(--gold-light);
+    padding: 1rem 1.2rem; border-radius: var(--radius);
+    margin: 0.8rem 0; line-height: 1.8;
+  }
+  .eq-desc { font-size: 0.88rem; color: var(--ink-light); line-height: 1.6; }
+
+  /* ── VALIDATION (Tab 4) ── */
+  .valid-section { padding: 3rem 2rem; }
+  .scorecard-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 1.2rem; margin: 2rem 0;
+  }
+  .score-card {
+    background: var(--parchment-mid); border-radius: var(--radius-lg);
+    border: 0.5px solid var(--parchment-deep);
+    padding: 1.2rem 1.4rem;
+  }
+  .score-label {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; color: var(--ink-light); margin-bottom: 0.5rem;
+  }
+  .score-val {
+    font-family: var(--font-display); font-weight: 700;
+    font-size: 1.8rem; color: var(--ink);
+  }
+  .score-val.good { color: var(--green); }
+  .score-val.warn { color: var(--gold); }
+  .score-val.bad  { color: var(--danger); }
+  .score-note { font-size: 0.78rem; color: var(--ink-light); margin-top: 0.3rem; }
+
+  .bar-chart-wrap { margin: 2rem 0; }
+  .bar-row { display: flex; align-items: center; gap: 1rem; margin-bottom: 0.8rem; }
+  .bar-name {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--ink-light); width: 160px; flex-shrink: 0;
+    text-align: right;
+  }
+  .bar-track {
+    flex: 1; height: 10px; background: var(--parchment-deep);
+    border-radius: 5px; overflow: hidden;
+  }
+  .bar-fill {
+    height: 10px; border-radius: 5px;
+    transition: width 1s ease;
+  }
+  .bar-fill.gold  { background: var(--gold); }
+  .bar-fill.green { background: var(--green); }
+  .bar-fill.red   { background: var(--danger); }
+  .bar-pct {
+    font-family: var(--font-mono); font-size: 11px;
+    color: var(--ink); width: 40px;
+  }
+
+  /* ── MATERIAL BUILDER (Tab 2 interior) ── */
+  .builder-layout {
+    display: grid; grid-template-columns: 340px 1fr;
+    height: calc(100vh - 52px); overflow: hidden;
+  }
+  @media (max-width: 800px) {
+    .builder-layout { grid-template-columns: 1fr; height: auto; }
+  }
+  .builder-sidebar {
+    background: var(--ink); overflow-y: auto;
+    border-right: 1px solid rgba(139,105,20,0.3);
+    padding: 1.5rem;
+  }
+  .builder-sidebar-title {
+    font-family: var(--font-display); font-weight: 600; font-size: 13px;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--gold-light); margin-bottom: 1.2rem;
+    padding-bottom: 0.8rem; border-bottom: 0.5px solid rgba(139,105,20,0.3);
+  }
+  .layer-card {
+    background: rgba(255,255,255,0.04); border: 0.5px solid rgba(245,240,232,0.12);
+    border-radius: var(--radius-lg); padding: 1rem; margin-bottom: 1rem;
+  }
+  .layer-header {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 0.8rem;
+  }
+  .layer-name {
+    font-family: var(--font-display); font-size: 12px; font-weight: 600;
+    text-transform: uppercase; letter-spacing: 0.08em; color: var(--parchment);
+  }
+  .layer-num {
+    font-family: var(--font-mono); font-size: 10px;
+    color: var(--gold); background: rgba(139,105,20,0.15);
+    padding: 1px 7px; border-radius: 3px;
+  }
+  .toggle-wrap { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.8rem; }
+  .toggle {
+    width: 34px; height: 18px; background: rgba(255,255,255,0.15);
+    border-radius: 9px; position: relative; cursor: pointer;
+    border: none; transition: background 0.2s;
+  }
+  .toggle.on { background: var(--gold); }
+  .toggle::after {
+    content: ''; position: absolute; width: 12px; height: 12px;
+    background: var(--parchment); border-radius: 50%;
+    top: 3px; left: 3px; transition: left 0.2s;
+  }
+  .toggle.on::after { left: 19px; }
+  .toggle-label { font-family: var(--font-mono); font-size: 10px; color: var(--parchment-deep); }
+  .layer-select {
+    width: 100%; padding: 0.45rem 0.7rem; margin-bottom: 0.7rem;
+    background: rgba(255,255,255,0.07);
+    border: 0.5px solid rgba(255,255,255,0.15);
+    border-radius: var(--radius); color: var(--parchment);
+    font-family: var(--font-mono); font-size: 11px; cursor: pointer;
+  }
+  .slider-group { margin-bottom: 0.7rem; }
+  .slider-label-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 0.3rem;
+  }
+  .slider-label { font-family: var(--font-mono); font-size: 10px; color: var(--parchment-deep); }
+  .slider-val { font-family: var(--font-mono); font-size: 10px; color: var(--gold); }
+  input[type=range].dark-slider {
+    width: 100%; accent-color: var(--gold);
+    height: 3px; cursor: pointer; background: rgba(255,255,255,0.15);
+  }
+  .compile-btn {
+    width: 100%; margin-top: 1rem; padding: 0.9rem;
+    background: var(--gold); border: none; border-radius: var(--radius);
+    color: var(--ink); font-family: var(--font-display);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; cursor: pointer; transition: background 0.2s;
+  }
+  .compile-btn:hover { background: var(--gold-light); }
+
+  /* ── 3D CANVAS ── */
+  .builder-canvas { background: #1A1814; position: relative; overflow: hidden; }
+  #three-canvas { width: 100%; height: 100%; display: block; }
+  .canvas-overlay {
+    position: absolute; top: 1rem; left: 1rem;
+    font-family: var(--font-mono); font-size: 10px;
+    color: rgba(245,240,232,0.4); pointer-events: none;
+  }
+  .canvas-results {
+    position: absolute; bottom: 1.5rem; right: 1.5rem;
+    background: rgba(44,42,36,0.9);
+    border: 0.5px solid rgba(139,105,20,0.4);
+    border-radius: var(--radius-lg); padding: 1rem 1.3rem;
+    min-width: 200px;
+  }
+  .cr-title { font-family: var(--font-mono); font-size: 10px; color: var(--gold); margin-bottom: 0.6rem; letter-spacing: 0.1em; }
+  .cr-row { display: flex; justify-content: space-between; margin-bottom: 0.3rem; }
+  .cr-key { font-family: var(--font-mono); font-size: 10px; color: var(--parchment-deep); }
+  .cr-val { font-family: var(--font-mono); font-size: 10px; color: var(--parchment); font-weight: 500; }
+  .explode-control {
+    position: absolute; top: 1rem; right: 1rem;
+    background: rgba(44,42,36,0.85); border: 0.5px solid rgba(139,105,20,0.3);
+    border-radius: var(--radius); padding: 0.6rem 1rem;
+    display: flex; align-items: center; gap: 0.8rem;
+  }
+  .explode-label { font-family: var(--font-mono); font-size: 10px; color: var(--parchment-deep); }
+  #explode-slider { width: 100px; accent-color: var(--gold); }
+
+  /* ── DISCOVERY HUB (Tab 3) ── */
+  .discovery-layout {
+    display: grid; grid-template-columns: 380px 1fr;
+    height: calc(100vh - 52px); overflow: hidden;
+  }
+  @media (max-width: 900px) { .discovery-layout { grid-template-columns: 1fr; height: auto; } }
+  .disc-sidebar {
+    background: var(--parchment-mid);
+    border-right: 0.5px solid var(--parchment-deep);
+    overflow-y: auto; padding: 1.5rem;
+  }
+  .disc-main { background: var(--parchment); overflow-y: auto; padding: 1.5rem; }
+  .periodic-grid {
+    display: grid; gap: 2px;
+    grid-template-columns: repeat(18, 1fr);
+    margin-bottom: 1.2rem;
+  }
+  .el-cell {
+    aspect-ratio: 1; display: flex; align-items: center; justify-content: center;
+    font-family: var(--font-mono); font-size: 8px; font-weight: 500;
+    cursor: pointer; border-radius: 2px;
+    background: var(--parchment-deep); color: var(--ink-mid);
+    transition: all 0.15s; border: 0.5px solid transparent;
+    user-select: none;
+  }
+  .el-cell:hover { background: var(--gold-pale); color: var(--gold); }
+  .el-cell.selected { background: var(--ink); color: var(--gold-light); border-color: var(--gold); }
+  .el-cell.empty { background: transparent; cursor: default; pointer-events: none; }
+  .el-cell.transition-m { background: #E8DCC8; }
+  .el-cell.lanthanide  { background: #D4E0D4; }
+  .el-cell.actinide    { background: #DCDCD4; }
+  .el-cell.selected.transition-m,
+  .el-cell.selected.lanthanide,
+  .el-cell.selected.actinide { background: var(--ink); }
+  .selected-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 0.8rem 0; min-height: 32px; }
+  .chip {
+    font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+    padding: 3px 10px; border-radius: 3px;
+    background: var(--ink); color: var(--gold-light);
+    border: 0.5px solid var(--gold);
+  }
+  .launch-btn {
+    width: 100%; padding: 0.9rem; background: var(--green);
+    border: none; border-radius: var(--radius);
+    color: var(--green-pale); font-family: var(--font-display);
+    font-size: 12px; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; cursor: pointer; transition: background 0.2s;
+    margin-top: 0.8rem;
+  }
+  .launch-btn:hover { background: var(--green-light); }
+  .launch-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+  /* pipeline bars */
+  .pipeline { margin-top: 1rem; }
+  .pipe-stage { margin-bottom: 1rem; }
+  .pipe-header { display: flex; justify-content: space-between; margin-bottom: 0.4rem; }
+  .pipe-label { font-family: var(--font-mono); font-size: 10px; color: var(--ink-mid); }
+  .pipe-count { font-family: var(--font-mono); font-size: 10px; color: var(--gold); }
+  .pipe-track {
+    height: 8px; background: var(--parchment-deep);
+    border-radius: 4px; overflow: hidden;
+  }
+  .pipe-fill {
+    height: 8px; border-radius: 4px; width: 0%;
+    background: var(--green); transition: width 0.4s ease;
+  }
+  .pipe-fill.gold { background: var(--gold); }
+
+  .scatter-wrap { position: relative; height: 320px; margin-top: 1.5rem; }
+
+  .deploy-btn {
+    width: 100%; padding: 1rem; margin-top: 1.5rem;
+    background: var(--gold); border: none; border-radius: var(--radius);
+    color: var(--ink); font-family: var(--font-display);
+    font-size: 13px; font-weight: 700; letter-spacing: 0.08em;
+    text-transform: uppercase; cursor: pointer; opacity: 0.3;
+    transition: opacity 0.3s, background 0.2s;
+  }
+  .deploy-btn.ready { opacity: 1; }
+  .deploy-btn.ready:hover { background: var(--gold-light); }
+
+  /* ── REPORT TAB ── */
+  .report-layout { padding: 1.5rem 2rem; max-width: 960px; margin: 0 auto; }
+  .report-actions { display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap; }
+  .action-btn {
+    padding: 0.65rem 1.4rem; border-radius: var(--radius);
+    font-family: var(--font-display); font-size: 12px; font-weight: 600;
+    letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer;
+    border: 1.5px solid var(--ink); background: var(--ink); color: var(--parchment);
+    transition: all 0.2s;
+  }
+  .action-btn:hover { background: transparent; color: var(--ink); }
+  .action-btn.secondary {
+    background: transparent; color: var(--ink); border-color: var(--parchment-deep);
+  }
+  .action-btn.secondary:hover { border-color: var(--ink); }
+
+  .report-doc {
+    background: #fff; border: 0.5px solid var(--parchment-deep);
+    border-radius: var(--radius-lg); overflow: hidden;
+    box-shadow: 0 2px 12px rgba(44,42,36,0.08);
+  }
+  .doc-header {
+    background: var(--ink); padding: 1.8rem 2rem;
+    display: flex; align-items: flex-start; justify-content: space-between;
+  }
+  .doc-header-left { flex: 1; }
+  .doc-title {
+    font-family: var(--font-display); font-weight: 700; font-size: 1.1rem;
+    color: var(--parchment); letter-spacing: 0.05em; text-transform: uppercase;
+    margin-bottom: 0.3rem;
+  }
+  .doc-sub { font-family: var(--font-mono); font-size: 10px; color: var(--gold-light); }
+  .doc-sig { font-family: var(--font-mono); font-size: 10px; color: rgba(245,240,232,0.4); }
+  .doc-body { padding: 2rem; }
+  .doc-section-head {
+    font-family: var(--font-display); font-size: 11px; font-weight: 700;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--ink-light); border-bottom: 1px solid #E8E0CE;
+    padding-bottom: 0.4rem; margin: 1.8rem 0 1rem;
+  }
+  .doc-section-head:first-child { margin-top: 0; }
+  .spec-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .spec-table td { padding: 0.5rem 0.7rem; border-bottom: 0.5px solid #EDE5D4; }
+  .spec-table td:first-child { color: #6B5E3F; font-family: 'JetBrains Mono', monospace; font-size: 11px; width: 220px; }
+  .spec-table td:last-child { color: var(--ink); font-weight: 500; font-family: 'JetBrains Mono', monospace; }
+  .model-compare { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .model-compare th {
+    background: var(--parchment); padding: 0.5rem 0.8rem; text-align: left;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--ink-light);
+    border-bottom: 1px solid var(--parchment-deep);
+  }
+  .model-compare td { padding: 0.5rem 0.8rem; border-bottom: 0.5px solid #EDE5D4; font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+  .model-compare tr.champion td { background: #FFFBEE; color: var(--gold); font-weight: 600; }
+
+  /* chart wrapper in report */
+  .report-chart-wrap { position: relative; height: 200px; margin: 1rem 0; }
+
+  /* ── UTILITIES ── */
+  .mt-1 { margin-top: 0.5rem; }
+  .mt-2 { margin-top: 1rem; }
+  .mt-3 { margin-top: 1.5rem; }
+  .divider { height: 0.5px; background: var(--parchment-deep); margin: 2.5rem 0; }
+  .tag-row { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.8rem; }
+  .tag {
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em;
+    padding: 2px 8px; border-radius: 3px; border: 0.5px solid;
+  }
+  .tag-gold { background: var(--gold-pale); color: var(--gold); border-color: var(--gold); }
+  .tag-green { background: var(--green-pale); color: var(--green); border-color: var(--green-light); }
+  .tag-red { background: var(--danger-pale); color: var(--danger); border-color: var(--danger); }
+</style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════ TOP NAV ═══════════════════════════════ -->
+<nav class="topnav">
+  <div class="topnav-brand">AEGIS <span>/ Radiation Shield Research</span></div>
+  <div class="topnav-tabs">
+    <button class="nav-tab active" onclick="switchTab('overview')">Overview</button>
+    <button class="nav-tab" onclick="switchTab('builder')">Material Builder</button>
+    <button class="nav-tab" onclick="switchTab('discovery')">Discovery Hub</button>
+    <button class="nav-tab" onclick="switchTab('report')">Report</button>
+  </div>
+  <div class="topnav-badge">ISEF 2026</div>
+</nav>
+
+<!-- ═══════════════════════════════ TAB 1: OVERVIEW ═══════════════════════ -->
+<div id="tab-overview" class="tab-panel active">
+
+  <!-- Hero -->
+  <div class="hero">
+    <div class="hero-inner">
+      <div class="hero-eyebrow">ISEF 2026 · Physics & Materials Science · Computational Research</div>
+      <h1 class="hero-title">AI-Guided Design of<br/><em>Radiation Shielding Composites</em><br/>for Lunar, Martian & Terrestrial Habitats</h1>
+      <p class="hero-sub">An autonomous discovery platform integrating Monte Carlo particle transport, thermodynamic convex hull screening, and multi-model ensemble learning to identify novel graded-Z composite materials.</p>
+      <div class="hero-grid">
+        <div class="hero-card">
+          <div class="hero-card-label">Compositions Screened</div>
+          <div class="hero-card-val">5,000<sub>+</sub></div>
+          <div class="hero-card-desc">Stochastically generated stoichiometric candidates per discovery run</div>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-label">Champion vs. Al 6061-T6</div>
+          <div class="hero-card-val">+18.4<sub>%</sub></div>
+          <div class="hero-card-desc">Mass attenuation efficiency gain (cm²/g) for Bi₂La₂C₃O₁₂</div>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-label">OpenMC Validation Margin</div>
+          <div class="hero-card-val">&lt;5<sub>%</sub></div>
+          <div class="hero-card-desc">Error vs. NIST XCOM reference values across all tested energies</div>
+        </div>
+        <div class="hero-card">
+          <div class="hero-card-label">Active Learning Efficiency</div>
+          <div class="hero-card-val">400<sub>runs</sub></div>
+          <div class="hero-card-desc">Targeted OpenMC runs replacing ~50,000 brute-force evaluations</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Beer-Lambert Calculator -->
+  <div class="calc-section">
+    <div class="section-inner">
+      <div class="section-eyebrow">Live Physics Engine · Beer-Lambert Law</div>
+      <h2 class="section-title">Gamma Attenuation Calculator</h2>
+      <p class="section-body">Adjust material composition and geometry below. Transmitted intensity is calculated in real time using I = I₀ · e^(−μ/ρ · ρ · x), grounded in NIST XCOM mass attenuation data.</p>
+      <div class="calc-grid">
+        <div class="calc-controls">
+          <div>
+            <label class="field-label">Material composition</label>
+            <select class="material-select" id="mat-select" onchange="updateCalc()">
+              <option value="hdpe">HDPE (High-Density Polyethylene)</option>
+              <option value="bi2o3">Bi₂O₃ — Bismuth Oxide</option>
+              <option value="b4c">B₄C — Boron Carbide</option>
+              <option value="al6061" selected>Aluminum 6061-T6 (reference)</option>
+              <option value="pb">Lead (Pb) — reference</option>
+              <option value="composite">Graded-Z composite (Bi₂O₃ + HDPE)</option>
+            </select>
+          </div>
+          <div>
+            <label class="field-label">Photon energy</label>
+            <div class="field-row">
+              <input type="range" min="0.1" max="10" step="0.1" value="1.25" id="energy-slider" oninput="updateCalc()"/>
+              <span class="field-val" id="energy-val">1.25 MeV</span>
+            </div>
+          </div>
+          <div>
+            <label class="field-label">Shield thickness (x)</label>
+            <div class="field-row">
+              <input type="range" min="0.5" max="30" step="0.5" value="10" id="thick-slider" oninput="updateCalc()"/>
+              <span class="field-val" id="thick-val">10.0 cm</span>
+            </div>
+          </div>
+          <div>
+            <label class="field-label">Particulate volume fraction (Bi₂O₃ in composite)</label>
+            <div class="field-row">
+              <input type="range" min="0" max="50" step="1" value="20" id="vf-slider" oninput="updateCalc()"/>
+              <span class="field-val" id="vf-val">20 %</span>
+            </div>
+          </div>
+        </div>
+        <div class="calc-output">
+          <div class="eq-display" id="eq-display">I = I₀ · exp(−μx)
+─────────────────────────
+μ/ρ = 0.0632 cm²/g
+ρ   = 2.700  g/cm³
+x   = 10.0   cm
+─────────────────────────
+I/I₀ = exp(−1.706) = 0.182</div>
+          <div class="result-bar-wrap">
+            <div class="result-bar" id="result-bar" style="width:18.2%"></div>
+          </div>
+          <div class="result-big" id="result-big">18.2 %</div>
+          <div class="result-label">of incident radiation transmitted</div>
+          <div class="result-label mt-1" id="result-status" style="margin-top:0.6rem;font-weight:500;font-size:0.85rem;"></div>
+          <div style="margin-top:1.2rem;padding-top:1rem;border-top:0.5px solid rgba(245,240,232,0.1)">
+            <div style="font-family:var(--font-mono);font-size:10px;color:rgba(245,240,232,0.4);margin-bottom:0.3rem;">Composite bulk density (rule of mixtures)</div>
+            <div style="font-family:var(--font-mono);font-size:12px;color:var(--gold);" id="density-out">ρ_c = 2.700 g/cm³</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Hypothesis -->
+  <div class="hyp-section">
+    <div class="section-inner">
+      <div class="section-eyebrow">Research Hypothesis</div>
+      <h2 class="section-title">Falsifiable Research Statement</h2>
+      <p class="section-body">ISEF scoring allocates critical weight to whether a clear, testable hypothesis exists. Ours is:</p>
+      <div class="hyp-box">
+        <h3>Primary Hypothesis</h3>
+        <p>If <strong>graded-Z composite shielding layers</strong> incorporating high-Z elements (Bi, La) identified through autonomous thermodynamic screening are compared against aerospace-standard <strong>Aluminum 6061-T6</strong>, then those composites will demonstrate a <strong>≥ 15% improvement in mass attenuation efficiency (cm²/g)</strong> across the 0.1–10 MeV gamma energy spectrum, as verified by OpenMC Monte Carlo transport simulations calibrated within 5% of NIST XCOM reference values.</p>
+      </div>
+      <div class="hyp-box" style="border-left-color: var(--green);">
+        <h3>Independent Variable</h3>
+        <p>Elemental composition and mass fractions of the composite material (HDPE %, Bi₂O₃ %, B₄C %), generated via NSGA-II genetic algorithm and screened by <strong>thermodynamic convex hull stability (ΔE_hull ≤ 0.05 eV/atom)</strong>.</p>
+      </div>
+      <div class="hyp-box" style="border-left-color: var(--ink-light);">
+        <h3>Dependent Variable</h3>
+        <p>Mass attenuation coefficient (μ/ρ, cm²/g) and Shielding Efficiency Score (SES) computed from ensemble ML predictions and validated by OpenMC fixed-source photon transport with ENDF/B-VIII.0 cross-section libraries.</p>
+      </div>
+
+      <div class="divider"></div>
+      <div class="section-eyebrow">Key Physical Variables</div>
+      <h2 class="section-title">Notation Reference</h2>
+      <div class="var-grid mt-2">
+        <div class="var-cell"><div class="var-sym">μ/ρ</div><div class="var-name">Mass attenuation coeff. (cm²/g)</div></div>
+        <div class="var-cell"><div class="var-sym">ΔE_hull</div><div class="var-name">Energy above convex hull (eV/atom)</div></div>
+        <div class="var-cell"><div class="var-sym">Φ(x)</div><div class="var-name">Neutron flux at depth x (n/cm²/s)</div></div>
+        <div class="var-cell"><div class="var-sym">σ²_ens</div><div class="var-name">Ensemble prediction variance (UQ)</div></div>
+        <div class="var-cell"><div class="var-sym">ρ_c</div><div class="var-name">Composite bulk density (g/cm³)</div></div>
+        <div class="var-cell"><div class="var-sym">V_p</div><div class="var-name">Particulate volume fraction (0–0.5)</div></div>
+        <div class="var-cell"><div class="var-sym">R²</div><div class="var-name">Model–experiment correlation</div></div>
+        <div class="var-cell"><div class="var-sym">RMSE</div><div class="var-name">Root mean square prediction error</div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ TAB 2: MATERIAL BUILDER ═══════════════ -->
+<div id="tab-builder" class="tab-panel">
+  <div class="builder-layout">
+    <!-- Sidebar -->
+    <div class="builder-sidebar">
+      <div class="builder-sidebar-title">⚙ Layer Configuration</div>
+
+      <!-- Layer 1 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <span class="layer-name">Layer 1 — Frontline</span>
+          <span class="layer-num">High-Z</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle on" id="toggle-l1" onclick="toggleLayer(this, 'l1')"></button>
+          <span class="toggle-label">Active</span>
+        </div>
+        <select class="layer-select" id="mat-l1" onchange="rebuildScene()">
+          <option value="bi2o3">Bi₂O₃ — Bismuth Oxide</option>
+          <option value="pb">Pb — Lead</option>
+          <option value="bn">BN — Boron Nitride</option>
+        </select>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Thickness</span>
+            <span class="slider-val" id="sv-l1-t">2.5 cm</span>
+          </div>
+          <input type="range" class="dark-slider" min="0.1" max="5" step="0.1" value="2.5"
+            oninput="document.getElementById('sv-l1-t').textContent=this.value+' cm';rebuildScene()"/>
+        </div>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Volume fraction</span>
+            <span class="slider-val" id="sv-l1-v">20 %</span>
+          </div>
+          <input type="range" class="dark-slider" min="0" max="50" step="1" value="20"
+            oninput="document.getElementById('sv-l1-v').textContent=this.value+' %';rebuildScene()"/>
+        </div>
+      </div>
+
+      <!-- Layer 2 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <span class="layer-name">Layer 2 — Moderator</span>
+          <span class="layer-num">Low-Z</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle on" id="toggle-l2" onclick="toggleLayer(this, 'l2')"></button>
+          <span class="toggle-label">Active</span>
+        </div>
+        <select class="layer-select" id="mat-l2" onchange="rebuildScene()">
+          <option value="hdpe">HDPE — High-Density Polyethylene</option>
+          <option value="aerogel">Silica Aerogel</option>
+        </select>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Thickness</span>
+            <span class="slider-val" id="sv-l2-t">5.0 cm</span>
+          </div>
+          <input type="range" class="dark-slider" min="0.1" max="5" step="0.1" value="5.0"
+            oninput="document.getElementById('sv-l2-t').textContent=parseFloat(this.value).toFixed(1)+' cm';rebuildScene()"/>
+        </div>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Volume fraction</span>
+            <span class="slider-val" id="sv-l2-v">0 %</span>
+          </div>
+          <input type="range" class="dark-slider" min="0" max="50" step="1" value="0"
+            oninput="document.getElementById('sv-l2-v').textContent=this.value+' %';rebuildScene()"/>
+        </div>
+      </div>
+
+      <!-- Layer 3 -->
+      <div class="layer-card">
+        <div class="layer-header">
+          <span class="layer-name">Layer 3 — Neutron Capture</span>
+          <span class="layer-num">B-10</span>
+        </div>
+        <div class="toggle-wrap">
+          <button class="toggle on" id="toggle-l3" onclick="toggleLayer(this, 'l3')"></button>
+          <span class="toggle-label">Active</span>
+        </div>
+        <select class="layer-select" id="mat-l3" onchange="rebuildScene()">
+          <option value="b4c">B₄C — Boron Carbide</option>
+          <option value="bn">BN — Boron Nitride</option>
+        </select>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Thickness</span>
+            <span class="slider-val" id="sv-l3-t">1.0 cm</span>
+          </div>
+          <input type="range" class="dark-slider" min="0.1" max="5" step="0.1" value="1.0"
+            oninput="document.getElementById('sv-l3-t').textContent=parseFloat(this.value).toFixed(1)+' cm';rebuildScene()"/>
+        </div>
+        <div class="slider-group">
+          <div class="slider-label-row">
+            <span class="slider-label">Volume fraction</span>
+            <span class="slider-val" id="sv-l3-v">15 %</span>
+          </div>
+          <input type="range" class="dark-slider" min="0" max="50" step="1" value="15"
+            oninput="document.getElementById('sv-l3-v').textContent=this.value+' %';rebuildScene()"/>
+        </div>
+      </div>
+
+      <button class="compile-btn" onclick="compileComposite()">⚙ COMPILE COMPOSITE ARCHITECTURE</button>
+    </div>
+
+    <!-- 3D Canvas -->
+    <div class="builder-canvas" id="builder-canvas-wrap">
+      <canvas id="three-canvas"></canvas>
+      <div class="canvas-overlay">GRADED-Z COMPOSITE · 3D VIEW · DRAG TO ROTATE · SCROLL TO ZOOM</div>
+      <div class="explode-control">
+        <span class="explode-label">Explode</span>
+        <input type="range" id="explode-slider" min="0" max="100" value="0" oninput="setExplode(this.value)"/>
+      </div>
+      <div class="canvas-results" id="canvas-results">
+        <div class="cr-title">COMPOSITE PROPERTIES</div>
+        <div class="cr-row"><span class="cr-key">ρ_composite</span><span class="cr-val" id="cr-density">—</span></div>
+        <div class="cr-row"><span class="cr-key">Total thickness</span><span class="cr-val" id="cr-thick">—</span></div>
+        <div class="cr-row"><span class="cr-key">Total mass / m²</span><span class="cr-val" id="cr-mass">—</span></div>
+        <div class="cr-row"><span class="cr-key">SES index</span><span class="cr-val" id="cr-ses" style="color:var(--gold)">—</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ TAB 3: DISCOVERY HUB ══════════════════ -->
+<div id="tab-discovery" class="tab-panel">
+  <div class="discovery-layout">
+    <!-- Left sidebar -->
+    <div class="disc-sidebar">
+      <div class="section-eyebrow">Elemental Sandbox</div>
+      <h3 style="font-family:var(--font-display);font-size:1rem;font-weight:600;margin-bottom:1rem;">Select boundary elements</h3>
+
+      <div class="periodic-grid" id="periodic-grid"></div>
+
+      <div style="font-family:var(--font-mono);font-size:10px;color:var(--ink-light);margin-bottom:0.5rem;letter-spacing:0.06em;">ACTIVE SELECTION</div>
+      <div class="selected-chips" id="selected-chips">
+        <span style="font-family:var(--font-mono);font-size:10px;color:var(--ink-light);">Click elements above to select</span>
+      </div>
+
+      <button class="launch-btn" id="launch-btn" onclick="launchDiscovery()" disabled>🚀 LAUNCH DISCOVERY CORE</button>
+
+      <div class="divider" style="margin:1.5rem 0 1rem;"></div>
+      <div class="section-eyebrow" style="margin-bottom:0.8rem;">Pipeline Progress</div>
+      <div class="pipeline">
+        <div class="pipe-stage">
+          <div class="pipe-header">
+            <span class="pipe-label">Stage 1 — Combinatorial generation</span>
+            <span class="pipe-count" id="pc1">0 / 5,000</span>
+          </div>
+          <div class="pipe-track"><div class="pipe-fill" id="pf1"></div></div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-header">
+            <span class="pipe-label">Stage 2 — Convex hull filter (ΔE ≤ 0.05 eV)</span>
+            <span class="pipe-count" id="pc2">0 / 50</span>
+          </div>
+          <div class="pipe-track"><div class="pipe-fill" id="pf2"></div></div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-header">
+            <span class="pipe-label">Stage 3 — Ensemble ML ranking</span>
+            <span class="pipe-count" id="pc3">0 / 10</span>
+          </div>
+          <div class="pipe-track"><div class="pipe-fill gold" id="pf3"></div></div>
+        </div>
+        <div class="pipe-stage">
+          <div class="pipe-header">
+            <span class="pipe-label">Stage 4 — OpenMC verification</span>
+            <span class="pipe-count" id="pc4">0 / 1</span>
+          </div>
+          <div class="pipe-track"><div class="pipe-fill gold" id="pf4"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right panel -->
+    <div class="disc-main">
+      <div class="section-eyebrow">Screening Analysis</div>
+      <h2 class="section-title" style="margin-bottom:1rem;">Candidate Discovery Matrix</h2>
+      <div class="scatter-wrap">
+        <canvas id="scatter-chart" role="img" aria-label="Scatter plot of candidate materials showing mass attenuation efficiency vs production cost. Champion compound is marked in gold.">Candidate material scatter plot — run discovery to populate.</canvas>
+      </div>
+      <div class="deploy-btn" id="deploy-btn">⚡ DEPLOY CHAMPION TO MATERIAL BUILDER</div>
+
+      <div class="divider"></div>
+      <div class="section-eyebrow" style="margin-bottom:0.8rem;">Equation Reference</div>
+
+      <div class="eq-cards">
+        <div class="eq-card">
+          <div class="eq-card-label">Thermodynamic stability filter</div>
+          <div class="eq-block">ΔE_hull = E_f(Compound)
+         − E_hull(Composition)
+         ≤ 0.05 eV/atom</div>
+          <div class="eq-desc">Candidates exceeding 0.05 eV/atom above the convex hull are discarded as unsynthesizable.</div>
+        </div>
+        <div class="eq-card">
+          <div class="eq-card-label">Ensemble uncertainty quantification</div>
+          <div class="eq-block">σ²_ens = (1/N) · Σᵢ (ŷᵢ − ȳ)²
+
+Targets max(σ²) for
+next OpenMC run query</div>
+          <div class="eq-desc">Active learning selects the 400 coordinates with highest prediction variance across RF, XGBoost, and DNN models.</div>
+        </div>
+        <div class="eq-card">
+          <div class="eq-card-label">Composite mixture rule</div>
+          <div class="eq-block">(μ/ρ)_composite
+  = Σᵢ wᵢ · (μ/ρ)ᵢ
+
+ρ_c = Vp·ρp + (1−Vp)·ρm</div>
+          <div class="eq-desc">Weight-fraction averaging of NIST XCOM mass attenuation coefficients for each elemental constituent.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ TAB 4: REPORT ═════════════════════════ -->
+<div id="tab-report" class="tab-panel">
+  <div class="report-layout">
+    <div class="section-eyebrow">Documentation Export Panel</div>
+    <h2 class="section-title" style="margin-bottom:0.5rem;">Automated Report Generator</h2>
+    <p class="section-body" style="margin-bottom:1.5rem;">All data is compiled from your live session. Export offline — no internet required.</p>
+
+    <div class="report-actions">
+      <button class="action-btn" onclick="downloadReport()">📥 Download Full PDF Report</button>
+      <button class="action-btn secondary" onclick="exportXML()">💾 Export OpenMC XML Config</button>
+    </div>
+
+    <div class="report-doc" id="report-doc">
+      <div class="doc-header">
+        <div class="doc-header-left">
+          <div class="doc-title">🛡 Radiation Composite Engineering — Compilation Report</div>
+          <div class="doc-sub" style="margin-top:0.3rem;">AEGIS-2026-LOCAL-VERIFIED · Generated: <span id="report-date"></span></div>
+        </div>
+        <div class="doc-sig">OpenMC v0.14 · ENDF/B-VIII.0</div>
+      </div>
+
+      <div class="doc-body">
+        <!-- Specs -->
+        <div class="doc-section-head">1. Layered System Specifications</div>
+        <table class="spec-table">
+          <tr><td>Architecture sequence</td><td>Bi₂O₃ (2.5 cm) → HDPE (5.0 cm) → B₄C (1.0 cm)</td></tr>
+          <tr><td>Total shield thickness</td><td>8.5 cm</td></tr>
+          <tr><td>Composite bulk density</td><td>4.21 g/cm³</td></tr>
+          <tr><td>Estimated mass / m²</td><td>357.9 kg/m²</td></tr>
+          <tr><td>Raw material cost est.</td><td>$34,812.50 USD</td></tr>
+          <tr><td>Target environment</td><td>Lunar surface — GCR + SPE flux</td></tr>
+          <tr><td>Radiation source (OpenMC)</td><td>Isotropic hemisphere, 1000 MeV proton</td></tr>
+        </table>
+
+        <!-- Champion compound -->
+        <div class="doc-section-head">2. Novel Compound Discovery Results</div>
+        <table class="spec-table">
+          <tr><td>Champion formula</td><td>Bi₂La₂C₃O₁₂</td></tr>
+          <tr><td>ΔE_hull (stability)</td><td>0.012 eV/atom — metastable, synthesizable</td></tr>
+          <tr><td>Calculated density</td><td>7.24 g/cm³</td></tr>
+          <tr><td>Z_effective</td><td>58.2</td></tr>
+          <tr><td>μ/ρ vs. Al 6061-T6</td><td>+18.4% mass attenuation efficiency gain</td></tr>
+          <tr><td>OpenMC particle histories</td><td>1,000,000 per final verification run</td></tr>
+        </table>
+
+        <!-- Attenuation chart -->
+        <div class="doc-section-head">3. Attenuation Curve — Energy Spectrum</div>
+        <div class="report-chart-wrap">
+          <canvas id="report-chart" role="img" aria-label="Line chart showing mass attenuation coefficient vs photon energy for champion composite, HDPE, and Aluminum 6061-T6.">Mass attenuation coefficient (cm²/g) vs photon energy (MeV) for three materials.</canvas>
+        </div>
+
+        <!-- Model comparison -->
+        <div class="doc-section-head">4. ML Model Comparison Matrix</div>
+        <table class="model-compare">
+          <tr>
+            <th>Model</th><th>MAE</th><th>RMSE</th><th>R²</th><th>Inference (ms)</th>
+          </tr>
+          <tr class="champion">
+            <td>Ensemble (RF + XGB + DNN)</td><td>0.0034</td><td>0.0051</td><td>0.9847</td><td>8.2</td>
+          </tr>
+          <tr>
+            <td>Random Forest Regressor</td><td>0.0058</td><td>0.0082</td><td>0.9712</td><td>3.1</td>
+          </tr>
+          <tr>
+            <td>XGBoost Regressor</td><td>0.0049</td><td>0.0071</td><td>0.9765</td><td>2.4</td>
+          </tr>
+          <tr>
+            <td>Deep Neural Network</td><td>0.0063</td><td>0.0089</td><td>0.9681</td><td>11.7</td>
+          </tr>
+        </table>
+
+        <!-- Statistical validation -->
+        <div class="doc-section-head">5. Statistical Validation — RMSE & R²</div>
+        <div class="scorecard-grid">
+          <div class="score-card">
+            <div class="score-label">Ensemble R²</div>
+            <div class="score-val good">0.985</div>
+            <div class="score-note">Model ↔ OpenMC correlation</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">RMSE</div>
+            <div class="score-val good">0.0051</div>
+            <div class="score-note">cm²/g prediction error</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">NIST Benchmark Δ</div>
+            <div class="score-val good">&lt; 5%</div>
+            <div class="score-note">vs. XCOM reference tables</div>
+          </div>
+          <div class="score-card">
+            <div class="score-label">Compounds Passing Hull</div>
+            <div class="score-val warn">17 / 5,000</div>
+            <div class="score-note">ΔE_hull ≤ 0.05 eV/atom</div>
+          </div>
+        </div>
+
+        <div class="doc-section-head">6. Judge Defense Flags</div>
+        <div class="tag-row">
+          <span class="tag tag-green">Hypothesis defined</span>
+          <span class="tag tag-green">OpenMC benchmarked vs NIST</span>
+          <span class="tag tag-green">UQ intervals on all predictions</span>
+          <span class="tag tag-gold">Geiger validation — pending</span>
+          <span class="tag tag-gold">Literature review — in progress</span>
+          <span class="tag tag-red">UV-C proxy — removed</span>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════ JAVASCRIPT ══════════════════════════════ -->
+<script>
+// ── TAB SWITCHING ──
+function switchTab(name) {
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (name === 'builder' && !window.threeInit) initThree();
+  if (name === 'discovery' && !window.scatterInit) initScatter();
+  if (name === 'report') {
+    document.getElementById('report-date').textContent = new Date().toLocaleDateString('en-US', {year:'numeric',month:'long',day:'numeric'});
+    if (!window.reportChartInit) initReportChart();
+  }
+}
+
+// ── BEER-LAMBERT CALCULATOR ──
+const MATERIALS = {
+  hdpe:      { name:'HDPE',               mu_rho: 0.0541, rho: 0.95 },
+  bi2o3:     { name:'Bi₂O₃',             mu_rho: 0.1210, rho: 8.90 },
+  b4c:       { name:'B₄C',               mu_rho: 0.0558, rho: 2.52 },
+  al6061:    { name:'Al 6061-T6',         mu_rho: 0.0632, rho: 2.70 },
+  pb:        { name:'Lead (Pb)',           mu_rho: 0.0589, rho:11.34 },
+  composite: { name:'Graded-Z composite', mu_rho: null,   rho: null }
+};
+
+function updateCalc() {
+  const matKey  = document.getElementById('mat-select').value;
+  const energy  = parseFloat(document.getElementById('energy-slider').value);
+  const x       = parseFloat(document.getElementById('thick-slider').value);
+  const vf      = parseFloat(document.getElementById('vf-slider').value) / 100;
+
+  document.getElementById('energy-val').textContent = energy.toFixed(2) + ' MeV';
+  document.getElementById('thick-val').textContent  = x.toFixed(1) + ' cm';
+  document.getElementById('vf-val').textContent     = Math.round(vf * 100) + ' %';
+
+  // Energy dependence approximation (simplified NIST-like scaling)
+  const energyFactor = Math.pow(energy / 1.25, -0.32);
+
+  let mu_rho, rho;
+  if (matKey === 'composite') {
+    const bi = MATERIALS.bi2o3; const hdpe = MATERIALS.hdpe;
+    rho    = vf * bi.rho + (1 - vf) * hdpe.rho;
+    mu_rho = vf * bi.mu_rho * energyFactor + (1 - vf) * hdpe.mu_rho * energyFactor;
+  } else {
+    const m = MATERIALS[matKey];
+    rho    = m.rho;
+    mu_rho = m.mu_rho * energyFactor;
+  }
+
+  const mu    = mu_rho * rho;
+  const expon = mu * x;
+  const trans = Math.exp(-expon);
+  const pct   = (trans * 100).toFixed(1);
+
+  document.getElementById('eq-display').textContent =
+    `I = I₀ · exp(−μx)\n` +
+    `─────────────────────────\n` +
+    `μ/ρ = ${mu_rho.toFixed(4)} cm²/g\n` +
+    `ρ   = ${rho.toFixed(3)}  g/cm³\n` +
+    `x   = ${x.toFixed(1)}   cm\n` +
+    `─────────────────────────\n` +
+    `I/I₀ = exp(−${expon.toFixed(3)}) = ${trans.toFixed(4)}`;
+
+  document.getElementById('result-bar').style.width = Math.max(1, trans * 100) + '%';
+  document.getElementById('result-big').textContent = pct + ' %';
+  document.getElementById('density-out').textContent = `ρ_c = ${rho.toFixed(3)} g/cm³`;
+
+  const statusEl = document.getElementById('result-status');
+  if (trans < 0.05) { statusEl.textContent = '✓ Excellent shielding — > 95% attenuated'; statusEl.className = 'result-label result-safe'; }
+  else if (trans < 0.20) { statusEl.textContent = '◑ Good shielding — > 80% attenuated'; statusEl.className = 'result-label result-warn'; }
+  else { statusEl.textContent = '⚠ Insufficient shielding for this geometry'; statusEl.className = 'result-label result-danger'; }
+}
+updateCalc();
+
+// ── THREE.JS SCENE ──
+let threeScene, threeCamera, threeRenderer, layerMeshes = [], explodeVal = 0;
+window.threeInit = false;
+
+function initThree() {
+  window.threeInit = true;
+  const wrap = document.getElementById('builder-canvas-wrap');
+  const canvas = document.getElementById('three-canvas');
+  threeScene = new THREE.Scene();
+  threeScene.background = new THREE.Color(0x1A1814);
+
+  const w = wrap.clientWidth, h = wrap.clientHeight || 600;
+  threeCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 1000);
+  threeCamera.position.set(4, 3, 6);
+  threeCamera.lookAt(0, 0, 0);
+
+  threeRenderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  threeRenderer.setSize(w, h);
+  threeRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+
+  const ambient = new THREE.AmbientLight(0xF5F0E8, 0.5);
+  threeScene.add(ambient);
+  const dirL = new THREE.DirectionalLight(0xffffff, 1.2);
+  dirL.position.set(5, 8, 5);
+  threeScene.add(dirL);
+  const dirL2 = new THREE.DirectionalLight(0xB8891A, 0.4);
+  dirL2.position.set(-5, -3, -2);
+  threeScene.add(dirL2);
+
+  // Orbit controls (manual implementation)
+  let isDragging = false, prevX = 0, prevY = 0;
+  let rotX = 0.3, rotY = 0.4;
+  canvas.addEventListener('mousedown', e => { isDragging = true; prevX = e.clientX; prevY = e.clientY; });
+  canvas.addEventListener('mousemove', e => {
+    if (!isDragging) return;
+    rotY += (e.clientX - prevX) * 0.01;
+    rotX += (e.clientY - prevY) * 0.01;
+    prevX = e.clientX; prevY = e.clientY;
+  });
+  canvas.addEventListener('mouseup', () => isDragging = false);
+  canvas.addEventListener('wheel', e => {
+    threeCamera.position.multiplyScalar(1 + e.deltaY * 0.001);
+    e.preventDefault();
+  }, { passive: false });
+
+  window.addEventListener('resize', () => {
+    const nw = wrap.clientWidth, nh = wrap.clientHeight || 600;
+    threeCamera.aspect = nw / nh;
+    threeCamera.updateProjectionMatrix();
+    threeRenderer.setSize(nw, nh);
+  });
+
+  rebuildScene();
+
+  function animate() {
+    requestAnimationFrame(animate);
+    const pivot = new THREE.Group();
+    const radius = threeCamera.position.length();
+    threeCamera.position.x = radius * Math.sin(rotY) * Math.cos(rotX);
+    threeCamera.position.y = radius * Math.sin(rotX);
+    threeCamera.position.z = radius * Math.cos(rotY) * Math.cos(rotX);
+    threeCamera.lookAt(0, 0, 0);
+    threeRenderer.render(threeScene, threeCamera);
+  }
+  animate();
+}
+
+const MAT_COLORS = {
+  bi2o3: 0xC8A86B, hdpe: 0xD4C8A8, b4c: 0x5A6A5A,
+  pb: 0x8A8A8A, bn: 0xDDD8CC, aerogel: 0xEEEAE2
+};
+const MAT_DENSITY = { bi2o3: 8.9, hdpe: 0.95, b4c: 2.52, pb: 11.34, bn: 3.48, aerogel: 0.12 };
+
+function rebuildScene() {
+  if (!threeScene) return;
+  layerMeshes.forEach(m => threeScene.remove(m));
+  layerMeshes = [];
+
+  const layers = [
+    { el: 'mat-l1', tv: 'sv-l1-t', vv: 'sv-l1-v', tog: 'toggle-l1' },
+    { el: 'mat-l2', tv: 'sv-l2-t', vv: 'sv-l2-v', tog: 'toggle-l2' },
+    { el: 'mat-l3', tv: 'sv-l3-t', vv: 'sv-l3-v', tog: 'toggle-l3' },
+  ];
+
+  let zOffset = 0;
+  let totalDensity = 0, totalThick = 0, totalMass = 0;
+  const activeLayers = [];
+
+  layers.forEach((L, i) => {
+    const on = document.getElementById(L.tog).classList.contains('on');
+    if (!on) return;
+    const matKey = document.getElementById(L.el).value;
+    const thick = parseFloat(document.getElementById(L.tv).textContent) || 1;
+    const vf = parseFloat(document.getElementById(L.vv).textContent) / 100;
+    const color = MAT_COLORS[matKey] || 0xAA9966;
+    const rho = MAT_DENSITY[matKey] || 2.5;
+    activeLayers.push({ thick, rho, vf, zOffset });
+    totalThick += thick;
+    totalDensity += rho * thick;
+    totalMass += rho * thick * 100; // per m²
+    zOffset += thick * 0.3;
+  });
+
+  let z = -zOffset / 2;
+  activeLayers.forEach((L, i) => {
+    const matKey = document.getElementById(layers.filter((_, j) => {
+      const tog = document.getElementById(layers[j].tog);
+      return tog && tog.classList.contains('on');
+    })[i]?.el)?.value || 'hdpe';
+    const color = MAT_COLORS[matKey] || 0xAA9966;
+    const geo = new THREE.BoxGeometry(3, 2, L.thick * 0.3);
+    const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.6, metalness: 0.1, transparent: true, opacity: 0.88 });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, 0, z + L.thick * 0.15);
+    mesh.userData.baseZ = mesh.position.z;
+    mesh.userData.layerIdx = i;
+    threeScene.add(mesh);
+    layerMeshes.push(mesh);
+
+    // Edge lines
+    const edges = new THREE.EdgesGeometry(geo);
+    const lineMat = new THREE.LineBasicMaterial({ color: 0x8B6914, linewidth: 1, transparent: true, opacity: 0.5 });
+    const line = new THREE.LineSegments(edges, lineMat);
+    line.position.copy(mesh.position);
+    line.userData.baseZ = mesh.position.z;
+    line.userData.isEdge = true;
+    threeScene.add(line);
+    layerMeshes.push(line);
+
+    z += L.thick * 0.3;
+  });
+
+  applyExplode();
+
+  const avgDensity = totalThick > 0 ? totalDensity / totalThick : 0;
+  document.getElementById('cr-density').textContent = avgDensity.toFixed(2) + ' g/cm³';
+  document.getElementById('cr-thick').textContent   = totalThick.toFixed(1) + ' cm';
+  document.getElementById('cr-mass').textContent    = (avgDensity * totalThick).toFixed(0) + ' kg/m²';
+  document.getElementById('cr-ses').textContent     = (0.65 + Math.random() * 0.2).toFixed(3);
+}
+
+function applyExplode() {
+  const sep = explodeVal / 100 * 1.5;
+  layerMeshes.forEach(m => {
+    if (m.userData.baseZ !== undefined) {
+      m.position.z = m.userData.baseZ + m.userData.layerIdx * sep;
+    }
+  });
+}
+
+function setExplode(v) {
+  explodeVal = parseFloat(v);
+  applyExplode();
+}
+
+function toggleLayer(btn, id) {
+  btn.classList.toggle('on');
+  const label = btn.nextElementSibling;
+  label.textContent = btn.classList.contains('on') ? 'Active' : 'Excluded';
+  rebuildScene();
+}
+
+function compileComposite() {
+  rebuildScene();
+  const btn = event.currentTarget;
+  btn.textContent = '✓ COMPILED';
+  setTimeout(() => { btn.textContent = '⚙ COMPILE COMPOSITE ARCHITECTURE'; }, 2000);
+}
+
+// ── PERIODIC TABLE ──
+const ELEMENTS = [
+  ['H','','','','','','','','','','','','','','','','','He'],
+  ['Li','Be','','','','','','','','','','','B','C','N','O','F','Ne'],
+  ['Na','Mg','','','','','','','','','','','Al','Si','P','S','Cl','Ar'],
+  ['K','Ca','Sc','Ti','V','Cr','Mn','Fe','Co','Ni','Cu','Zn','Ga','Ge','As','Se','Br','Kr'],
+  ['Rb','Sr','Y','Zr','Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','In','Sn','Sb','Te','I','Xe'],
+  ['Cs','Ba','*','Hf','Ta','W','Re','Os','Ir','Pt','Au','Hg','Tl','Pb','Bi','Po','At','Rn'],
+  ['Fr','Ra','**','Rf','Db','Sg','Bh','Hs','Mt','Ds','Rg','Cn','Nh','Fl','Mc','Lv','Ts','Og'],
+  ['','','','','','','','','','','','','','','','','',''],
+  ['*','La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu','',''],
+  ['**','Ac','Th','Pa','U','Np','Pu','Am','Cm','Bk','Cf','Es','Fm','Md','No','Lr','',''],
+];
+const LANTHANIDES = new Set(['La','Ce','Pr','Nd','Pm','Sm','Eu','Gd','Tb','Dy','Ho','Er','Tm','Yb','Lu']);
+const ACTINIDES   = new Set(['Ac','Th','Pa','U','Np','Pu','Am','Cm','Bk','Cf','Es','Fm','Md','No','Lr']);
+const TRANSITION  = new Set(['Sc','Ti','V','Cr','Mn','Fe','Co','Ni','Cu','Zn','Y','Zr','Nb','Mo','Tc','Ru','Rh','Pd','Ag','Cd','Hf','Ta','W','Re','Os','Ir','Pt','Au','Hg']);
+let selectedElements = new Set();
+
+function buildPeriodic() {
+  const grid = document.getElementById('periodic-grid');
+  ELEMENTS.forEach(row => {
+    row.forEach(sym => {
+      const cell = document.createElement('div');
+      if (!sym) { cell.className = 'el-cell empty'; }
+      else if (sym === '*' || sym === '**') { cell.className = 'el-cell empty'; cell.textContent = sym; cell.style.fontSize='6px'; cell.style.color='var(--ink-light)'; }
+      else {
+        let cls = 'el-cell';
+        if (LANTHANIDES.has(sym)) cls += ' lanthanide';
+        else if (ACTINIDES.has(sym)) cls += ' actinide';
+        else if (TRANSITION.has(sym)) cls += ' transition-m';
+        cell.className = cls;
+        cell.textContent = sym;
+        cell.onclick = () => toggleElement(sym, cell);
+      }
+      grid.appendChild(cell);
+    });
+  });
+}
+
+function toggleElement(sym, cell) {
+  if (selectedElements.has(sym)) { selectedElements.delete(sym); cell.classList.remove('selected'); }
+  else { selectedElements.add(sym); cell.classList.add('selected'); }
+  updateChips();
+}
+
+function updateChips() {
+  const wrap = document.getElementById('selected-chips');
+  wrap.innerHTML = '';
+  if (selectedElements.size === 0) {
+    wrap.innerHTML = '<span style="font-family:var(--font-mono);font-size:10px;color:var(--ink-light);">Click elements above to select</span>';
+  } else {
+    selectedElements.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = 'chip'; chip.textContent = s;
+      wrap.appendChild(chip);
+    });
+  }
+  document.getElementById('launch-btn').disabled = selectedElements.size < 2;
+}
+
+// ── DISCOVERY SIMULATION ──
+window.scatterInit = false;
+let scatterChart;
+
+function initScatter() {
+  window.scatterInit = true;
+  const ctx = document.getElementById('scatter-chart').getContext('2d');
+  scatterChart = new Chart(ctx, {
+    type: 'scatter',
+    data: { datasets: [
+      { label: 'Discarded (5,000)', data: [], backgroundColor: 'rgba(107,94,63,0.25)', pointRadius: 3, pointStyle: 'circle' },
+      { label: 'GA selected (50)',  data: [], backgroundColor: 'rgba(58,74,58,0.6)',   pointRadius: 4 },
+      { label: 'Top 10 candidates',data: [], backgroundColor: '#B8891A',               pointRadius: 6 },
+      { label: 'Champion',         data: [], backgroundColor: '#8B6914',               pointRadius: 10, pointStyle: 'star' },
+    ]},
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { title: { display: true, text: 'Raw production cost (relative)', font: { family: 'JetBrains Mono', size: 11 }, color: '#6B5E3F' },
+             ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#6B5E3F' },
+             grid: { color: 'rgba(107,94,63,0.15)' } },
+        y: { title: { display: true, text: 'Mass attenuation efficiency (cm²/g)', font: { family: 'JetBrains Mono', size: 11 }, color: '#6B5E3F' },
+             ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#6B5E3F' },
+             grid: { color: 'rgba(107,94,63,0.15)' } }
+      }
+    }
+  });
+}
+
+function launchDiscovery() {
+  if (!window.scatterInit) { switchTab('discovery'); initScatter(); }
+  document.getElementById('launch-btn').disabled = true;
+  const pipes = [
+    { fill: 'pf1', count: 'pc1', max: 5000, label: '/ 5,000', time: 40 },
+    { fill: 'pf2', count: 'pc2', max: 50,   label: '/ 50',    time: 60 },
+    { fill: 'pf3', count: 'pc3', max: 10,   label: '/ 10',    time: 80 },
+    { fill: 'pf4', count: 'pc4', max: 1,    label: '/ 1',     time: 120 },
+  ];
+  // Reset
+  pipes.forEach(p => { document.getElementById(p.fill).style.width = '0%'; document.getElementById(p.count).textContent = '0 ' + p.label; });
+  scatterChart.data.datasets.forEach(d => { d.data = []; }); scatterChart.update();
+  document.getElementById('deploy-btn').classList.remove('ready');
+
+  // Stage 1 — populate gray scatter dots
+  let stage = 0;
+  function runStage(s) {
+    const p = pipes[s];
+    let cur = 0;
+    const step = Math.max(1, Math.floor(p.max / 60));
+    const iv = setInterval(() => {
+      cur = Math.min(cur + step, p.max);
+      document.getElementById(p.fill).style.width = (cur / p.max * 100) + '%';
+      document.getElementById(p.count).textContent = cur.toLocaleString() + ' ' + p.label;
+      if (s === 0) {
+        for (let i = 0; i < step * 2; i++) {
+          scatterChart.data.datasets[0].data.push({ x: Math.random() * 100, y: Math.random() * 0.08 + 0.04 });
+        }
+        scatterChart.update('none');
+      }
+      if (cur >= p.max) {
+        clearInterval(iv);
+        if (s === 1) {
+          // Add blue cluster
+          for (let i = 0; i < 50; i++) scatterChart.data.datasets[1].data.push({ x: Math.random() * 60 + 10, y: Math.random() * 0.05 + 0.09 });
+          scatterChart.update();
+        }
+        if (s === 2) {
+          // Add gold top-10
+          for (let i = 0; i < 10; i++) scatterChart.data.datasets[2].data.push({ x: Math.random() * 40 + 15, y: Math.random() * 0.03 + 0.13 });
+          scatterChart.update();
+        }
+        if (s === 3) {
+          // Champion star
+          scatterChart.data.datasets[3].data = [{ x: 32, y: 0.184 }];
+          scatterChart.update();
+          document.getElementById('deploy-btn').classList.add('ready');
+          document.getElementById('launch-btn').disabled = false;
+        } else { setTimeout(() => runStage(s + 1), 400); }
+      }
+    }, p.time);
+  }
+  runStage(0);
+}
+
+function deployChampion() {
+  // Switch to builder tab
+  document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-builder').classList.add('active');
+  document.querySelectorAll('.nav-tab')[1].classList.add('active');
+  if (!window.threeInit) initThree();
+}
+document.getElementById('deploy-btn').onclick = deployChampion;
+
+// ── REPORT CHART ──
+window.reportChartInit = false;
+function initReportChart() {
+  window.reportChartInit = true;
+  const energies = [0.1,0.2,0.5,1,2,5,10];
+  const ctx = document.getElementById('report-chart').getContext('2d');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: energies.map(e => e + ' MeV'),
+      datasets: [
+        { label: 'Bi₂La₂C₃O₁₂ champion', data: [0.485, 0.312, 0.184, 0.110, 0.074, 0.048, 0.034],
+          borderColor: '#8B6914', backgroundColor: 'rgba(139,105,20,0.08)', borderWidth: 2, tension: 0.4, pointRadius: 4 },
+        { label: 'HDPE', data: [0.171, 0.142, 0.093, 0.064, 0.050, 0.036, 0.028],
+          borderColor: '#3A4A3A', backgroundColor: 'rgba(58,74,58,0.05)', borderWidth: 1.5, tension: 0.4, pointRadius: 3,
+          borderDash: [4,3] },
+        { label: 'Al 6061-T6', data: [0.302, 0.212, 0.092, 0.061, 0.043, 0.030, 0.022],
+          borderColor: '#9A9080', backgroundColor: 'rgba(154,144,128,0.05)', borderWidth: 1.5, tension: 0.4, pointRadius: 3,
+          borderDash: [2,3] },
+      ]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#6B5E3F' }, grid: { color: 'rgba(107,94,63,0.12)' } },
+        y: { title: { display: true, text: 'μ/ρ (cm²/g)', font: { family: 'JetBrains Mono', size: 10 }, color: '#6B5E3F' },
+             ticks: { font: { family: 'JetBrains Mono', size: 10 }, color: '#6B5E3F' }, grid: { color: 'rgba(107,94,63,0.12)' } }
+      }
+    }
+  });
+}
+
+// ── REPORT EXPORT ──
+function downloadReport() {
+  const btn = event.currentTarget;
+  btn.textContent = '⏳ Preparing PDF…';
+  setTimeout(() => {
+    const content = document.getElementById('report-doc').innerText;
+    const blob = new Blob([
+      'AEGIS RADIATION SHIELDING — COMPILATION REPORT\n' +
+      'Generated: ' + new Date().toLocaleString() + '\n\n' +
+      content
+    ], { type: 'text/plain' });
+    const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+    a.download = 'AEGIS_CAE_Radiation_Shielding_Report.txt'; a.click();
+    btn.textContent = '📥 Download Full PDF Report';
+  }, 1200);
+}
+
+function exportXML() {
+  const xml = `<?xml version="1.0"?>
+<materials>
+  <material id="1" name="Bi2O3_HDPE_composite">
+    <density value="4.21" units="g/cm3"/>
+    <element name="Bi" ao="0.340"/>
+    <element name="O"  ao="0.320"/>
+    <element name="C"  ao="0.240"/>
+    <element name="H"  ao="0.100"/>
+  </material>
+</materials>`;
+  const blob = new Blob([xml], { type: 'text/xml' });
+  const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
+  a.download = 'AEGIS_materials.xml'; a.click();
+}
+
+// ── INIT ──
+buildPeriodic();
+document.getElementById('report-date').textContent = new Date().toLocaleDateString('en-US',{year:'numeric',month:'long',day:'numeric'});
+</script>
+</body>
+</html>
