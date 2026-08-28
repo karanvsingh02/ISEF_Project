@@ -10,3 +10,6 @@ __pycache__/
 # Flutter Build
 frontend/build/
 frontend/.dart_tool/
+
+# Materials API Key (Deep)
+backend/.env/
