@@ -9,6 +9,7 @@ router = APIRouter(prefix="/api/v1/materials", tags=["Materials & Cheminformatic
 
 class MaterialAnalysisRequest(BaseModel):
     smiles: str
+    use_3d_fidelity: bool = False  # Allows the Flutter frontend to trigger exact 3D volume calculations
 
 class MaterialAnalysisResponse(BaseModel):
     smiles: str
@@ -22,12 +23,18 @@ class MaterialAnalysisResponse(BaseModel):
 @router.post("/analyze-smiles", response_model=MaterialAnalysisResponse)
 async def analyze_smiles(payload: MaterialAnalysisRequest):
     try:
+        # 1. Parse the SMILES string (extracts dictionary of mass fractions)
         comp = parse_smiles_composition(payload.smiles)
+        
+        # 2. Pass the entire mass_fractions dictionary, plus the 3D fidelity flags
         props = calculate_bicerano_properties(
-            comp["hydrogen_fraction_wH"],
-            comp["carbon_fraction_wC"],
-            comp["oxygen_fraction_wO"]
+            mass_fractions=comp["mass_fractions"],
+            is_polymer=True,
+            use_3d_fidelity=payload.use_3d_fidelity,
+            smiles_string=payload.smiles
         )
+        
+        # 3. Return the fully populated JSON response
         return MaterialAnalysisResponse(
             smiles=payload.smiles,
             hydrogen_mass_fraction=props["hydrogen_mass_fraction"],

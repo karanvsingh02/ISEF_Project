@@ -20,24 +20,38 @@ model.eval()
 
 class PredictionRequest(BaseModel):
     thickness_cm: float
-    energy_mev: float
+    w_regolith: float
+    density_g_cm3: float
+    topology_idx: float
 
 class PredictionResponse(BaseModel):
     thickness_cm: float
-    energy_mev: float
+    w_regolith: float
     predicted_dose_mgy: float
+    predicted_neutron_flux: float
     status: str
 
 @router.post("/pinn", response_model=PredictionResponse)
 async def predict_dose(payload: PredictionRequest):
-    input_tensor = torch.tensor([[payload.thickness_cm, payload.energy_mev]], dtype=torch.float32)
+    # 1. Align tensor exactly with PINN input layer [Thickness, w_regolith, Density, Topology_Index]
+    input_tensor = torch.tensor([[
+        payload.thickness_cm, 
+        payload.w_regolith, 
+        payload.density_g_cm3, 
+        payload.topology_idx
+    ]], dtype=torch.float32)
     
     with torch.no_grad():
-        predicted_dose = model(input_tensor).item()
+        predictions = model(input_tensor)
+        
+        # 2. Extract both Dose (index 0) and Neutron Flux (index 1)
+        predicted_dose = predictions[0, 0].item()
+        predicted_flux = predictions[0, 1].item()
         
     return PredictionResponse(
         thickness_cm=payload.thickness_cm,
-        energy_mev=payload.energy_mev,
-        predicted_dose_mgy=max(0.0, predicted_dose),
+        w_regolith=payload.w_regolith,
+        predicted_dose_mgy=max(0.0, predicted_dose),     # ReLU-style safety clamp
+        predicted_neutron_flux=max(0.0, predicted_flux), # ReLU-style safety clamp
         status="success"
     )
