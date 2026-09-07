@@ -7,6 +7,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from app.models.pinn import ShieldingPINN
 
 def validate():
+    
     print("🔬 Initializing NIST PSTAR Ground-Truth Validation...")
     
     model = ShieldingPINN()

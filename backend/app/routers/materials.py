@@ -3,7 +3,7 @@ from pydantic import BaseModel
 from typing import Dict, Any
 
 from app.core.rdkit_service import parse_smiles_composition, KNOWN_POLYMERS
-from app.core.bicerano import calculate_bicerano_properties
+from app.core.bicerano import calculate_bragg_properties
 
 router = APIRouter(prefix="/api/v1/materials", tags=["Materials & Cheminformatics"])
 
@@ -27,7 +27,7 @@ async def analyze_smiles(payload: MaterialAnalysisRequest):
         comp = parse_smiles_composition(payload.smiles)
         
         # 2. Pass the entire mass_fractions dictionary, plus the 3D fidelity flags
-        props = calculate_bicerano_properties(
+        props = calculate_bragg_properties(
             mass_fractions=comp["mass_fractions"],
             is_polymer=True,
             use_3d_fidelity=payload.use_3d_fidelity,

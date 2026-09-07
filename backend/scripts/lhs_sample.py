@@ -11,7 +11,7 @@ sys.path.append(
         )
     )
 )
-from app.core.bicerano import calculate_bicerano_properties
+from app.core.bicerano import calculate_bragg_properties
 
 def generate_lhs_design(n_samples: int = 1500):
     print(f"Generating {n_samples} Latin Hypercube design samples...")
@@ -19,7 +19,9 @@ def generate_lhs_design(n_samples: int = 1500):
     sampler = qmc.LatinHypercube(d=2, seed=42)
     sample = sampler.random(n=n_samples)
     
-    # Thickness: 1.0 cm to 15.0 cm | Regolith Weight %: 0.0 to 0.70
+    # Design variables:
+    #   Shield thickness: 1.0–15.0 cm
+    #   Regolith mass fraction: 0.0–0.70
     l_bounds = [1.0, 0.0]
     u_bounds = [15.0, 0.70]
     scaled_samples = qmc.scale(sample, l_bounds, u_bounds)
@@ -144,7 +146,8 @@ def generate_lhs_design(n_samples: int = 1500):
         row_sum = sum(mass_fractions.values())
         assert abs(row_sum - 1.0) < 1e-10, f"Row {i} mass fractions sum to {row_sum}"
         
-        props = calculate_bicerano_properties(mass_fractions, is_polymer=False, use_3d_fidelity=False)
+        # Updated clean function call
+        props = calculate_bragg_properties(mass_fractions)
         
         data.append({
             "run_id": i,
@@ -211,7 +214,7 @@ def generate_lhs_design(n_samples: int = 1500):
     
     output_path = os.path.join(os.path.dirname(__file__), "lhs_design_space.csv")
     df.to_csv(output_path, index=False, float_format="%.10g")
-    print(f"✅ Fully validated, research-grade LHS dataset saved to {output_path}")
+    print(f"✅ Fully validated LHS design-space dataset saved to {output_path}")
 
 if __name__ == "__main__":
     generate_lhs_design(1500)

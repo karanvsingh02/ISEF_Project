@@ -6,7 +6,7 @@ import math
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from app.core.rdkit_service import parse_smiles_composition, KNOWN_POLYMERS
-from app.core.bicerano import calculate_bicerano_properties
+from app.core.bicerano import calculate_bragg_properties
 from app.core.xcom_service import (
     calculate_zeff,
     calculate_mixture_attenuation_at_energy,
@@ -54,7 +54,7 @@ def test_hdpe_literature_baseline():
             "O": comp["oxygen_fraction_wO"]
         }
         
-        props = calculate_bicerano_properties(mass_fractions, is_polymer=True)
+        props = calculate_bragg_properties(mass_fractions, is_polymer=True)
 
         # 3. Official Literature Baselines for HDPE
         LIT_WH = 0.1437
@@ -184,14 +184,14 @@ def test_3d_density_integration():
         }
 
         # 1. Tier 1: The Fast Heuristic (GAN Mode)
-        fast_props = calculate_bicerano_properties(
+        fast_props = calculate_bragg_properties(
             mass_fractions, 
             is_polymer=True, 
             use_3d_fidelity=False
         )
         
         # 2. Tier 2: The Exact 3D Engine (Geant4 Validation Mode)
-        exact_props = calculate_bicerano_properties(
+        exact_props = calculate_bragg_properties(
             mass_fractions, 
             is_polymer=True, 
             use_3d_fidelity=True, 
