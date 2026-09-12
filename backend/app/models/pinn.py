@@ -1,99 +1,98 @@
+from app.core.physics_tables import table_based_stopping_power
 import torch
 import torch.nn as nn
 from app.core.physics import bethe_bloch_stopping_power
 
 class ResidualBlock(nn.Module):
-    """A standard skip-connection block using SiLU."""
     def __init__(self, hidden_dim: int):
         super().__init__()
         self.linear1 = nn.Linear(hidden_dim, hidden_dim)
         self.linear2 = nn.Linear(hidden_dim, hidden_dim)
-        self.activation = nn.SiLU()
+        self.activation = nn.Tanh()
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         identity = x
         out = self.activation(self.linear1(x))
         out = self.linear2(out)
-        # Skip connection: add identity before final activation
         return self.activation(out + identity)
 
 class ShieldingPINN(nn.Module):
-    """
-    Residual PINN mapping [Thickness, w_regolith, Density, Topology_Index] -> [Dose, Neutron Flux]
-    """
     def __init__(self):
         super().__init__()
         
-        # Input layer: Upgraded to 4 inputs -> 64 hidden
-        self.input_layer = nn.Sequential(
-            nn.Linear(4, 64),
-            nn.SiLU()
+        # 1. SHARED TRUNK: Learns the basic 3D geometry and energy scales
+        self.shared_trunk = nn.Sequential(
+            nn.Linear(3, 128),
+            nn.Tanh(),
+            ResidualBlock(128)
         )
         
-        # 3 Residual Blocks (Equivalent to 6 hidden layers, but with gradient highways)
-        self.res_blocks = nn.Sequential(
-            ResidualBlock(64),
-            ResidualBlock(64),
-            ResidualBlock(64)
+        # 2. DOSE BRANCH: Dedicated to learning smooth Bethe-Bloch Coulomb physics
+        self.dose_branch = nn.Sequential(
+            ResidualBlock(128),
+            nn.Linear(128, 64),
+            nn.Tanh(),
+            nn.Linear(64, 1),
+            nn.Softplus()
         )
         
-        # Output compression and final layer
-        self.output_layer = nn.Sequential(
-            nn.Linear(64, 32),
-            nn.SiLU(),
-            nn.Linear(32, 2) # Outputs: Dose, Neutron Flux
+        # 3. HADRONIC BRANCH: Dedicated to learning sharp Spallation thresholds
+        self.hadron_branch = nn.Sequential(
+            ResidualBlock(128),
+            nn.Linear(128, 64),
+            nn.Tanh(),
+            nn.Linear(64, 4), # Outputs: Neutrons, Protons, Pions, Light Ions
+            nn.Softplus()
         )
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
-        x = self.input_layer(x)
-        x = self.res_blocks(x)
-        x = self.output_layer(x)
-        return x
+        shared_features = self.shared_trunk(x)
+        dose_out = self.dose_branch(shared_features)
+        hadrons_out = self.hadron_branch(shared_features)
+        
+        # Recombine them into the [Dose, Neutrons, Protons, Pions, Ions] format
+        return torch.cat([dose_out, hadrons_out], dim=1)
 
-    def compute_physics_loss(self, x: torch.Tensor, effective_energy_mev: torch.Tensor) -> torch.Tensor:
+    def compute_physics_loss(self, x: torch.Tensor, mass_fractions_dict: dict) -> torch.Tensor:
         """
-        Calculates d(Dose)/d(Thickness) residual against stopping power.
-        Includes dynamic Z/A and mean excitation energy mapping based on regolith %.
+        Calculates d(Dose)/d(Thickness) residual against NIST experimental tables.
+        Includes Bragg additivity, molecular binding, and Sternheimer density effects.
         """
-        # 1. Separate all 4 inputs (only thickness requires grad)
         thickness = x[:, 0:1].clone().detach().requires_grad_(True)
         w_regolith = x[:, 1:2].clone().detach()
-        density_g_cm3 = x[:, 2:3].clone().detach()
-        topology_idx = x[:, 3:4].clone().detach()
+        log_energy = x[:, 2:3].clone().detach()
+        incident_energy_mev = 10.0 ** log_energy
         
-        # 2. Re-combine into a single input tensor for forward pass
-        x_input = torch.cat([thickness, w_regolith, density_g_cm3, topology_idx], dim=1)
+        x_input = torch.cat([thickness, w_regolith, log_energy], dim=1)
         predictions = self.forward(x_input)
-        
-        # 3. Isolate Dose (index 0) from Neutron Flux (index 1)
         predicted_dose = predictions[:, 0:1]
         
-        # 4. Calculate d(Dose)/d(Thickness) via Autograd
+        # Calculate network derivative
         d_dose_d_x = torch.autograd.grad(
-            outputs=predicted_dose,
-            inputs=thickness,
-            grad_outputs=torch.ones_like(predicted_dose),
-            create_graph=True
+            outputs=predicted_dose, inputs=thickness,
+            grad_outputs=torch.ones_like(predicted_dose), create_graph=True
         )[0]
         
-        # 5. Dynamic Composition Mapping (Rule of Mixtures for PyTorch Tensors)
-        # HDPE: Z/A = 0.556, I = 57.4 | LHS-1 Regolith: Z/A = 0.498, I = 135.0
-        z_over_a_mix = (1.0 - w_regolith) * 0.556 + (w_regolith * 0.498)
+        # Calculate dynamic density
+        rho_hdpe, rho_regolith = 0.95, 2.75
+        w_hdpe = 1.0 - w_regolith
+        density_g_cm3 = 1.0 / ((w_hdpe / rho_hdpe) + (w_regolith / rho_regolith))
         
-        # Logarithmic averaging for Mean Excitation Energy (Bragg Rule)
-        ln_I_mix = (1.0 - w_regolith) * torch.log(torch.tensor(57.4)) + (w_regolith * torch.log(torch.tensor(135.0)))
+        # Calculate dynamic mean excitation energy
+        ln_I_mix = w_hdpe * torch.log(torch.tensor(57.4)) + (w_regolith * torch.log(torch.tensor(135.0)))
         mean_excitation_ev_mix = torch.exp(ln_I_mix)
         
-        # 6. Physics target gradient derived from Bethe-Bloch
-        # We explicitly pass the calculated tensors, overriding physics.py's defaults.
-        # PyTorch will broadcast these automatically through the physics.py math.
-        theoretical_stopping = bethe_bloch_stopping_power(
-            kinetic_energy_MeV=effective_energy_mev,
+        # NIST Table query with Sternheimer-Peierls density effect
+        # Note: mass_fractions_dict must contain PyTorch tensors matching the batch size
+        theoretical_stopping = table_based_stopping_power(
+            kinetic_energy_MeV=incident_energy_mev,
+            mass_fractions=mass_fractions_dict,
             density_g_cm3=density_g_cm3,
-            z_over_a=z_over_a_mix,
-            mean_excitation_eV=mean_excitation_ev_mix
+            mean_excitation_eV=mean_excitation_ev_mix,
+            apply_density_effect_correction=True
         )
         
-        # 7. Differential residual loss
-        physics_residual = d_dose_d_x + theoretical_stopping
+        dose_scaling_factor = 1e-13 
+        physics_residual = d_dose_d_x + (theoretical_stopping * dose_scaling_factor)
+        
         return torch.mean(physics_residual ** 2)

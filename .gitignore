@@ -13,3 +13,7 @@ frontend/.dart_tool/
 
 # Materials API Key (Deep)
 backend/.env/
+
+#PINN Training Datasets
+Part1
+Part2

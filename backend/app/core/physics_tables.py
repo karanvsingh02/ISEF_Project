@@ -58,7 +58,7 @@ def differentiable_1d_interp(x: torch.Tensor, xp: torch.Tensor, yp: torch.Tensor
 
 
 def _peierls_density_effect(
-    X: torch.Tensor, density_g_cm3: float, z_over_a: float, mean_excitation_eV: float
+    X: torch.Tensor, density_g_cm3, z_over_a, mean_excitation_eV
 ) -> torch.Tensor:
     """
     General (Sternheimer-Peierls 1971) asymptotic density-effect delta(X),
@@ -69,19 +69,31 @@ def _peierls_density_effect(
     near-threshold behavior mostly cancels between the compound and the
     elemental estimate anyway.
     """
-    if density_g_cm3 <= 0 or z_over_a <= 0:
-        return torch.zeros_like(X)
-    plasma_eV = 28.816 * math.sqrt(density_g_cm3 * z_over_a)
-    C_stern = -2.0 * math.log(mean_excitation_eV / plasma_eV) - 1.0
+    density_t = torch.as_tensor(density_g_cm3, dtype=X.dtype, device=X.device)
+    za_t = torch.as_tensor(z_over_a, dtype=X.dtype, device=X.device)
+    mean_i_t = torch.as_tensor(mean_excitation_eV, dtype=X.dtype, device=X.device)
+
+    valid = (density_t > 0) & (za_t > 0)
+    safe_density = torch.clamp(density_t, min=1e-8)
+    safe_za = torch.clamp(za_t, min=1e-8)
+    
+    plasma_eV = 28.816 * torch.sqrt(safe_density * safe_za)
+    C_stern = -2.0 * torch.log(mean_i_t / plasma_eV) - 1.0
     X_a = -C_stern / (2.0 * math.log(10.0))
-    return torch.where(X > X_a, 2.0 * math.log(10.0) * X + C_stern, torch.zeros_like(X))
+    res = torch.where(X > X_a, 2.0 * math.log(10.0) * X + C_stern, torch.zeros_like(X))
+    
+    if isinstance(valid, torch.Tensor) and valid.numel() > 1:
+        res = torch.where(valid, res, torch.zeros_like(X))
+    elif isinstance(valid, torch.Tensor) and not valid.item():
+        res = torch.zeros_like(X)
+    return res
 
 
 def table_based_stopping_power(
     kinetic_energy_MeV: torch.Tensor,
     mass_fractions: Dict[str, torch.Tensor],
-    density_g_cm3: float,
-    mean_excitation_eV: float = None,
+    density_g_cm3: torch.Tensor,
+    mean_excitation_eV: torch.Tensor = None,
     projectile_mass_MeV: float = 938.27208816,
     apply_density_effect_correction: bool = True,
 ) -> torch.Tensor:
@@ -107,54 +119,45 @@ def table_based_stopping_power(
     Brandt-Kitagawa effective charge, Vavilov/Landau straggling.
     """
     total_mass_stopping_power = torch.zeros_like(kinetic_energy_MeV, dtype=torch.float32)
-    z_over_a_eff = 0.0
-    log_I_bragg_num = 0.0
+    z_over_a_eff = torch.zeros_like(kinetic_energy_MeV, dtype=torch.float32)
+    log_I_bragg_num = torch.zeros_like(kinetic_energy_MeV, dtype=torch.float32)
 
     # Apply Bragg's Additivity Rule: Sum(w_i * S_i)
     for element, fraction in mass_fractions.items():
-        if element in NIST_DB and fraction > 0:
+        if element in NIST_DB:
             xp = NIST_DB[element]["energy_MeV"]
             yp = NIST_DB[element]["stopping_power"]
 
-            # Interpolate and add weighted empirical contribution
             element_stopping = differentiable_1d_interp(kinetic_energy_MeV, xp, yp)
-            total_mass_stopping_power += fraction * element_stopping
+            total_mass_stopping_power = total_mass_stopping_power + (fraction * element_stopping)
 
-            # Accumulate values for the molecular binding correction
             if element in ELEMENTAL_PROPS and mean_excitation_eV is not None:
                 Z_i = ELEMENTAL_PROPS[element]["Z"]
                 A_i = ELEMENTAL_PROPS[element]["A"]
                 I_i = ELEMENTAL_PROPS[element]["I_eV"]
 
                 term = fraction * (Z_i / A_i)
-                z_over_a_eff += term
-                log_I_bragg_num += term * math.log(I_i)
+                z_over_a_eff = z_over_a_eff + term
+                log_I_bragg_num = log_I_bragg_num + term * math.log(I_i)
 
     # Apply Hybrid Molecular Binding Correction (if I_comp is provided)
-    if mean_excitation_eV is not None and z_over_a_eff > 0:
+    if mean_excitation_eV is not None:
         K = 0.307075
+        
+        # Avoid division by zero on z_over_a_eff
+        z_safe_eff = torch.clamp(z_over_a_eff, min=1e-6)
+        ln_I_bragg = log_I_bragg_num / z_safe_eff
+        ln_I_comp = torch.log(torch.clamp(mean_excitation_eV, min=1.0))
 
-        # Calculate Effective Bragg Excitation Energy
-        ln_I_bragg = log_I_bragg_num / z_over_a_eff
-        ln_I_comp = math.log(mean_excitation_eV)
-
-        # Relativistic Kinematics (Clamp energy to prevent division by zero)
         T = torch.clamp(kinetic_energy_MeV, min=0.1)
         gamma = 1.0 + (T / projectile_mass_MeV)
         beta2 = 1.0 - (1.0 / (gamma ** 2))
         beta2 = torch.clamp(beta2, min=1e-8)
 
-        # The Bethe Difference Equation
         delta_S_mass = (K * z_over_a_eff / beta2) * (ln_I_bragg - ln_I_comp)
-
-        # Low-Energy Dampener: Prevents the 1/beta^2 scaling from overpowering the physics
-        # where the Born approximation fails (below 2 MeV) and physical state differences
-        # (e.g., NIST H2 gas vs. polymer Solid state) dictate the cross-sections.
         dampener = 1.0 - torch.exp(-kinetic_energy_MeV / 2.0)
+        total_mass_stopping_power = total_mass_stopping_power + (delta_S_mass * dampener)
 
-        total_mass_stopping_power += (delta_S_mass * dampener)
-
-        # --- Density-effect "phase/state" correction (new) ------------------------
         if apply_density_effect_correction:
             beta_gamma = torch.sqrt(torch.clamp(beta2, min=1e-12)) * gamma
             X = torch.log10(beta_gamma)
@@ -163,20 +166,16 @@ def table_based_stopping_power(
 
             delta_bragg_weighted = torch.zeros_like(kinetic_energy_MeV)
             for element, fraction in mass_fractions.items():
-                if element in ELEMENTAL_PROPS and fraction > 0:
+                if element in ELEMENTAL_PROPS:
                     props = ELEMENTAL_PROPS[element]
                     z_over_a_i = props["Z"] / props["A"]
                     delta_i = _peierls_density_effect(
                         X, props["density_g_cm3"], z_over_a_i, props["I_eV"]
                     )
-                    # weight by each element's fractional contribution to Z/A --
-                    # the same weighting Bragg's rule itself uses for the sum.
-                    delta_bragg_weighted += fraction * (z_over_a_i / z_over_a_eff) * delta_i
+                    delta_bragg_weighted = delta_bragg_weighted + fraction * (z_over_a_i / z_safe_eff) * delta_i
 
             delta_state_correction = -(K * z_over_a_eff / beta2) * 0.5 * (delta_compound - delta_bragg_weighted)
-            total_mass_stopping_power += delta_state_correction * dampener
+            total_mass_stopping_power = total_mass_stopping_power + (delta_state_correction * dampener)
 
-    # Convert to Linear Stopping Power (MeV/cm)
     linear_stopping_power = total_mass_stopping_power * density_g_cm3
-
     return linear_stopping_power
