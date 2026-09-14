@@ -42,12 +42,38 @@ def gp_shrink(df, target_col, sem_col, n_restarts=5):
     mc_var = mc_sem ** 2
     gp_var = gp_std ** 2
 
+    # ---------------------------------------------------------
+    # SCALE THE SAFETY EPSILON TO THIS COLUMN'S OWN MAGNITUDE
+    #
+    # A fixed epsilon (the previous code used 1e-30) silently dominates
+    # the precision-combination formula below whenever the column's
+    # natural variance is smaller than that epsilon -- which is exactly
+    # what happens for absorbed dose (values ~1e-14, so variances
+    # ~1e-32) and for any exact-zero-interaction row (mc_var == 0 for a
+    # column like neutron yield). When that happens, EVERY affected
+    # row's combined variance collapses to ~epsilon regardless of its
+    # real precision, so the "shrunk_sem" column stops being a genuine
+    # per-row estimate and becomes an almost-constant floor instead
+    # (this showed up as target_dose_..._shrunk_sem sitting around
+    # 8e-16-1.4e-15 for nearly every row, and target_secondary_
+    # neutrons_shrunk_sem being exactly sqrt(1e-30) = 1e-15 for every
+    # zero-interaction row).
+    #
+    # Scaling epsilon to a tiny fraction of this column's own typical
+    # variance keeps it acting purely as a division-by-zero guard
+    # (needed for exact-zero mc_var rows) without ever swamping a real,
+    # non-degenerate signal.
+    # ---------------------------------------------------------
+    positive_var = np.concatenate([mc_var[mc_var > 0], gp_var[gp_var > 0]])
+    eps = np.median(positive_var) * 1e-6 if positive_var.size > 0 else 1e-30
+    eps = max(eps, 1e-300)  # guard against a literal zero (e.g. an all-zero column)
+
     # Precision-weighted combination
-    w_mc = gp_var / (mc_var + gp_var + 1e-30)
+    w_mc = gp_var / (mc_var + gp_var + eps)
     w_gp = 1.0 - w_mc
 
     shrunk = w_mc * y + w_gp * gp_mean
-    shrunk_var = 1.0 / (1.0 / (mc_var + 1e-30) + 1.0 / (gp_var + 1e-30))
+    shrunk_var = 1.0 / (1.0 / (mc_var + eps) + 1.0 / (gp_var + eps))
 
     # ---------------------------------------------------------
     # 2. NON-NEGATIVITY CONSTRAINT
