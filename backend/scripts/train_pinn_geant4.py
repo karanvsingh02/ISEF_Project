@@ -13,24 +13,15 @@ sys.path.append(base_dir)
 
 from app.models.pinn import ShieldingPINN
 
-RANDOM_STATE = 42   # controls the train/test split
-NN_SEED = 42        # controls weight init + training stochasticity
+RANDOM_STATE = 42
+NN_SEED = 42
 TEST_SIZE = 0.2
 DOSE_SCALAR = 1e14
-N_STRATA_BINS = 3   # quantile bins per input dimension for the design-aware split
-
-# Physically-motivated dosimetric floor (Sv/particle). See prior notes:
-# rows below this get their dose TARGET clamped to the floor (not
-# excluded), so the network learns a concrete answer for "very small
-# dose" instead of extrapolating into an untrained regime. Keep in sync
-# with evaluate_pinn.py.
+N_STRATA_BINS = 3
 DOSE_FLOOR_SV = 1e-20
 
 
 def set_seeds(seed):
-    """Make weight initialization and training stochasticity reproducible
-    run-to-run. The train/test split was already deterministic
-    (random_state=42); this covers everything else."""
     random.seed(seed)
     np.random.seed(seed)
     torch.manual_seed(seed)
@@ -39,21 +30,10 @@ def set_seeds(seed):
 
 
 def build_design_stratification_labels(df, n_bins=N_STRATA_BINS):
-    """
-    LHS already gives good coverage of the input design space across the
-    full dataset. A plain random 80/20 split can still, by chance, pull a
-    disproportionate share of any one region (e.g. thin-shielding or
-    low-energy rows) into the test set, leaving the training set with an
-    uneven picture of the space it's meant to cover. Binning each input
-    dimension into quantile groups and stratifying the split on the
-    combination keeps BOTH the training and test sets representative
-    "sub-designs" of the original space, rather than lumpy random draws.
-    """
     log_energy = np.log10(df["incident_energy_mev"].values)
     b_thick = pd.qcut(df["thickness_cm"], n_bins, labels=False, duplicates="drop")
     b_wreg = pd.qcut(df["w_regolith"], n_bins, labels=False, duplicates="drop")
     b_energy = pd.qcut(pd.Series(log_energy), n_bins, labels=False, duplicates="drop")
-    # Combine into a single integer label (safe as long as n_bins <= 10 per axis).
     return (b_thick.values * 100) + (b_wreg.values * 10) + b_energy.values
 
 
@@ -64,12 +44,59 @@ def split_train_test(df):
             np.arange(len(df)), test_size=TEST_SIZE, random_state=RANDOM_STATE, stratify=strata
         )
     except ValueError as e:
-        # Can happen if some stratum ends up with too few rows to split at all.
         print(f"⚠️  Design-aware stratified split failed ({e}); falling back to a plain random split.")
         idx_train, idx_test = train_test_split(
             np.arange(len(df)), test_size=TEST_SIZE, random_state=RANDOM_STATE
         )
     return idx_train, idx_test
+
+
+def build_mass_fractions(w_reg_tensor):
+    w_hdpe = 1.0 - w_reg_tensor
+    return {
+        "H": w_hdpe * (4.032 / 28.05), "C": w_hdpe * (24.022 / 28.05),
+        "Si": w_reg_tensor * 0.2295, "Al": w_reg_tensor * 0.1392, "Ca": w_reg_tensor * 0.0967,
+        "Fe": w_reg_tensor * 0.0248, "Mg": w_reg_tensor * 0.0172, "Na": w_reg_tensor * 0.0189,
+        "K": w_reg_tensor * 0.0028, "Ti": w_reg_tensor * 0.0038, "P": w_reg_tensor * 0.0007,
+        "O": w_reg_tensor * 0.4664
+    }
+
+
+def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+    """
+    Short L-BFGS fine-tuning pass after Adam. Adam makes fast, robust
+    progress early on; L-BFGS uses curvature (second-order) information to
+    polish the final approach to a minimum, which tends to help PINN loss
+    landscapes specifically -- the physics-residual term adds sharp,
+    non-quadratic structure that a fixed-step first-order method handles
+    less precisely once already close to a good solution. Always run this
+    AFTER Adam has converged, never from a random initialization.
+    """
+    lbfgs = torch.optim.LBFGS(
+        model.parameters(), lr=1.0, max_iter=max_iter,
+        history_size=history_size, line_search_fn='strong_wolfe'
+    )
+
+    def closure():
+        lbfgs.zero_grad()
+        predictions = model(X_tensor)
+        sq_err = (predictions - Y_target) ** 2
+        normalized_task_losses = sq_err.mean(dim=0) / target_variances
+        loss_data = normalized_task_losses.sum()
+        loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
+        total_loss = loss_data + (physics_weight * loss_physics)
+        total_loss.backward()
+        return total_loss
+
+    print(f"\n🔧 Running L-BFGS refinement ({n_calls} x up to {max_iter} internal iterations)...")
+    for call_idx in range(n_calls):
+        loss_before = closure().item()
+        lbfgs.step(closure)
+        loss_after = closure().item()
+        print(f"  L-BFGS pass {call_idx + 1}/{n_calls}: loss {loss_before:.6e} -> {loss_after:.6e}")
+
+    return model
 
 
 def train_pinn():
@@ -84,21 +111,18 @@ def train_pinn():
     print(f"📐 Training on {len(df_train)} / {len(df)} rows "
           f"({len(idx_test)} held out for evaluation, design-aware split)")
 
-    # 1. Inputs
     X = np.column_stack([
         df_train["thickness_cm"].values,
         df_train["w_regolith"].values,
         np.log10(df_train["incident_energy_mev"].values)
     ])
 
-    # 2. Targets
     Y_dose_lin = df_train["target_dose_sv_per_particle_shrunk"].values * DOSE_SCALAR
     Y_neutrons = df_train["target_secondary_neutrons_shrunk"].values
     Y_protons = df_train["target_secondary_protons"].values
     Y_pions = df_train["target_secondary_pions"].values
     Y_ions = df_train["target_secondary_light_ions"].values
 
-    # DOSE FLOOR: clamp rather than exclude (see prior notes).
     dose_floor_scaled = DOSE_FLOOR_SV * DOSE_SCALAR
     n_floored = int((Y_dose_lin < dose_floor_scaled).sum())
     if n_floored > 0:
@@ -108,35 +132,16 @@ def train_pinn():
     Y_dose_lin_clamped = np.maximum(Y_dose_lin, dose_floor_scaled)
     Y_dose = np.log10(Y_dose_lin_clamped)
 
-    # 3. Convert to Tensors
     X_tensor = torch.tensor(X, dtype=torch.float32, requires_grad=True)
     Y_target = torch.tensor(np.column_stack([Y_dose, Y_neutrons, Y_protons, Y_pions, Y_ions]), dtype=torch.float32)
 
-    # Per-channel variance scale so all 5 tasks contribute on a comparable footing.
     dose_var = np.var(Y_dose)
     hadron_vars = np.var(np.column_stack([Y_neutrons, Y_protons, Y_pions, Y_ions]), axis=0)
     target_variances = torch.tensor(np.concatenate([[dose_var], hadron_vars]) + 1e-6, dtype=torch.float32)
 
-    # 4. Batch-wise Mass Fractions for NIST Tables
     w_reg = torch.tensor(df_train["w_regolith"].values, dtype=torch.float32).unsqueeze(1)
-    w_hdpe = 1.0 - w_reg
+    mass_fractions_batch = build_mass_fractions(w_reg)
 
-    mass_fractions_batch = {
-        "H": w_hdpe * (4.032 / 28.05),
-        "C": w_hdpe * (24.022 / 28.05),
-        "Si": w_reg * 0.2295,
-        "Al": w_reg * 0.1392,
-        "Ca": w_reg * 0.0967,
-        "Fe": w_reg * 0.0248,
-        "Mg": w_reg * 0.0172,
-        "Na": w_reg * 0.0189,
-        "K": w_reg * 0.0028,
-        "Ti": w_reg * 0.0038,
-        "P": w_reg * 0.0007,
-        "O": w_reg * 0.4664
-    }
-
-    # 5. Model & Optimization
     model = ShieldingPINN()
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=200)
@@ -145,7 +150,11 @@ def train_pinn():
     physics_warmup_epochs = 1000
     max_grad_norm = 5.0
 
-    print("🧠 Initiating balanced multi-task training loop...\n")
+    best_loss = float("inf")
+    best_epoch = -1
+    best_state_dict = None
+
+    print("🧠 Initiating balanced multi-task training loop (Adam)...\n")
 
     for epoch in range(epochs):
         optimizer.zero_grad()
@@ -155,6 +164,12 @@ def train_pinn():
         normalized_task_losses = sq_err.mean(dim=0) / target_variances
         loss_data = normalized_task_losses.sum()
 
+        current_data_loss = loss_data.item()
+        if current_data_loss < best_loss:
+            best_loss = current_data_loss
+            best_epoch = epoch + 1
+            best_state_dict = {k: v.detach().clone() for k, v in model.state_dict().items()}
+
         loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
         physics_weight = physics_weight_max * min(1.0, epoch / physics_warmup_epochs)
 
@@ -163,7 +178,6 @@ def train_pinn():
 
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_grad_norm)
         optimizer.step()
-
         scheduler.step(total_loss.detach())
 
         if (epoch + 1) % 500 == 0:
@@ -172,6 +186,13 @@ def train_pinn():
             print(f"Epoch {epoch+1:04d}/{epochs} | Total: {total_loss.item():.4e} "
                   f"[Dose Loss: {d_loss:.4e} | Neut Loss: {n_loss:.4e} | "
                   f"Phys: {loss_physics.item():.4e} (w={physics_weight:.1e})]")
+
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+        print(f"\nℹ️  Restored best Adam checkpoint from epoch {best_epoch} (data loss = {best_loss:.4e}).")
+
+    run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight=physics_weight_max)
 
     weights_dir = os.path.join(base_dir, "app", "models")
     os.makedirs(weights_dir, exist_ok=True)

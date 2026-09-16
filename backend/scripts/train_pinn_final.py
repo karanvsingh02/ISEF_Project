@@ -35,6 +35,36 @@ def build_mass_fractions(w_reg_tensor):
     }
 
 
+def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+    """Same refinement pass as train_pinn_geant4.py -- keep in sync so the
+    production model uses the exact same recipe that was validated."""
+    lbfgs = torch.optim.LBFGS(
+        model.parameters(), lr=1.0, max_iter=max_iter,
+        history_size=history_size, line_search_fn='strong_wolfe'
+    )
+
+    def closure():
+        lbfgs.zero_grad()
+        predictions = model(X_tensor)
+        sq_err = (predictions - Y_target) ** 2
+        normalized_task_losses = sq_err.mean(dim=0) / target_variances
+        loss_data = normalized_task_losses.sum()
+        loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
+        total_loss = loss_data + (physics_weight * loss_physics)
+        total_loss.backward()
+        return total_loss
+
+    print(f"\n🔧 Running L-BFGS refinement ({n_calls} x up to {max_iter} internal iterations)...")
+    for call_idx in range(n_calls):
+        loss_before = closure().item()
+        lbfgs.step(closure)
+        loss_after = closure().item()
+        print(f"  L-BFGS pass {call_idx + 1}/{n_calls}: loss {loss_before:.6e} -> {loss_after:.6e}")
+
+    return model
+
+
 def train_final_model():
     set_seeds(NN_SEED)
     print("🚀 Training FINAL production model on 100% of the data (no held-out split).")
@@ -86,7 +116,11 @@ def train_final_model():
     physics_warmup_epochs = 1000
     max_grad_norm = 5.0
 
-    print("🧠 Training...\n")
+    best_loss = float("inf")
+    best_epoch = -1
+    best_state_dict = None
+
+    print("🧠 Training (Adam)...\n")
     for epoch in range(epochs):
         optimizer.zero_grad()
         predictions = model(X_tensor)
@@ -94,6 +128,12 @@ def train_final_model():
         sq_err = (predictions - Y_target) ** 2
         normalized_task_losses = sq_err.mean(dim=0) / target_variances
         loss_data = normalized_task_losses.sum()
+
+        current_data_loss = loss_data.item()
+        if current_data_loss < best_loss:
+            best_loss = current_data_loss
+            best_epoch = epoch + 1
+            best_state_dict = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
         loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
         physics_weight = physics_weight_max * min(1.0, epoch / physics_warmup_epochs)
@@ -109,6 +149,13 @@ def train_final_model():
             n_loss = normalized_task_losses[1].item()
             print(f"Epoch {epoch+1:04d}/{epochs} | Total: {total_loss.item():.4e} "
                   f"[Dose Loss: {d_loss:.4e} | Neut Loss: {n_loss:.4e} | Phys: {loss_physics.item():.4e}]")
+
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+        print(f"\nℹ️  Restored best Adam checkpoint from epoch {best_epoch} (data loss = {best_loss:.4e}).")
+
+    run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight=physics_weight_max)
 
     weights_dir = os.path.join(base_dir, "app", "models")
     os.makedirs(weights_dir, exist_ok=True)

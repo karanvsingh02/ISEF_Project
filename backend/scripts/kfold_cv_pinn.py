@@ -16,8 +16,8 @@ from app.models.pinn import ShieldingPINN
 NN_SEED = 42
 N_FOLDS = 5
 DOSE_SCALAR = 1e14
-DOSE_FLOOR_SV = 1e-20     # keep in sync with train_pinn_geant4.py / evaluate_pinn.py
-N_STRATA_BINS = 3         # keep in sync with train_pinn_geant4.py / evaluate_pinn.py
+DOSE_FLOOR_SV = 1e-20
+N_STRATA_BINS = 3
 EPOCHS = 4000
 PHYSICS_WEIGHT_MAX = 1e-2
 PHYSICS_WARMUP_EPOCHS = 1000
@@ -33,7 +33,6 @@ def set_seeds(seed):
 
 
 def build_design_stratification_labels(df, n_bins=N_STRATA_BINS):
-    """Identical logic to train_pinn_geant4.py / evaluate_pinn.py."""
     log_energy = np.log10(df["incident_energy_mev"].values)
     b_thick = pd.qcut(df["thickness_cm"], n_bins, labels=False, duplicates="drop")
     b_wreg = pd.qcut(df["w_regolith"], n_bins, labels=False, duplicates="drop")
@@ -52,10 +51,33 @@ def build_mass_fractions(w_reg_tensor):
     }
 
 
+def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+    lbfgs = torch.optim.LBFGS(
+        model.parameters(), lr=1.0, max_iter=max_iter,
+        history_size=history_size, line_search_fn='strong_wolfe'
+    )
+
+    def closure():
+        lbfgs.zero_grad()
+        predictions = model(X_tensor)
+        sq_err = (predictions - Y_target) ** 2
+        normalized_task_losses = sq_err.mean(dim=0) / target_variances
+        loss_data = normalized_task_losses.sum()
+        loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
+        total_loss = loss_data + (physics_weight * loss_physics)
+        total_loss.backward()
+        return total_loss
+
+    for _ in range(n_calls):
+        lbfgs.step(closure)
+
+    return model
+
+
 def train_one_fold(df_train):
-    """Same training recipe as train_pinn_geant4.py, applied to one fold's
-    training rows. Every row participates in every channel's loss (dose
-    values below the floor are clamped, not excluded)."""
+    """Same training recipe as train_pinn_geant4.py (Adam -> best-checkpoint
+    restore -> L-BFGS refinement), applied to one fold's training rows."""
     X = np.column_stack([
         df_train["thickness_cm"].values,
         df_train["w_regolith"].values,
@@ -86,6 +108,9 @@ def train_one_fold(df_train):
     optimizer = optim.Adam(model.parameters(), lr=1e-3)
     scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=200)
 
+    best_loss = float("inf")
+    best_state_dict = None
+
     for epoch in range(EPOCHS):
         optimizer.zero_grad()
         predictions = model(X_tensor)
@@ -93,6 +118,11 @@ def train_one_fold(df_train):
         sq_err = (predictions - Y_target) ** 2
         normalized_task_losses = sq_err.mean(dim=0) / target_variances
         loss_data = normalized_task_losses.sum()
+
+        current_data_loss = loss_data.item()
+        if current_data_loss < best_loss:
+            best_loss = current_data_loss
+            best_state_dict = {k: v.detach().clone() for k, v in model.state_dict().items()}
 
         loss_physics = model.compute_physics_loss(X_tensor, mass_fractions_batch)
         physics_weight = PHYSICS_WEIGHT_MAX * min(1.0, epoch / PHYSICS_WARMUP_EPOCHS)
@@ -102,6 +132,12 @@ def train_one_fold(df_train):
         torch.nn.utils.clip_grad_norm_(model.parameters(), MAX_GRAD_NORM)
         optimizer.step()
         scheduler.step(total_loss.detach())
+
+    if best_state_dict is not None:
+        model.load_state_dict(best_state_dict)
+
+    run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
+                          physics_weight=PHYSICS_WEIGHT_MAX)
 
     return model
 
@@ -175,8 +211,6 @@ def run_kfold_cv():
 
     fold_metrics = []
     for fold_idx, (train_idx, test_idx) in enumerate(splits):
-        # Same seed every fold: isolates "sensitivity to which data was held
-        # out" from "sensitivity to random weight initialization".
         set_seeds(NN_SEED)
 
         df_train = df.iloc[train_idx].reset_index(drop=True)
