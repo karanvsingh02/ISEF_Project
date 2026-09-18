@@ -63,7 +63,7 @@ def build_mass_fractions(w_reg_tensor):
 
 
 def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
-                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+                          physics_weight, max_iter=100, history_size=50, n_calls=1):
     """
     Short L-BFGS fine-tuning pass after Adam. Adam makes fast, robust
     progress early on; L-BFGS uses curvature (second-order) information to
@@ -72,6 +72,19 @@ def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fract
     non-quadratic structure that a fixed-step first-order method handles
     less precisely once already close to a good solution. Always run this
     AFTER Adam has converged, never from a random initialization.
+
+    max_iter/n_calls were reduced from an earlier 200/3 default after
+    k-fold CV showed that setting improved training loss substantially
+    (~25%) but came at a real generalization cost on the light-ion
+    channel specifically (ion R^2 dropped from 0.975 to 0.955, and its
+    fold-to-fold variance more than tripled) while dose/neutron/proton/
+    pion stayed flat. Light ions are the sparsest, noisiest secondary
+    channel in this dataset, so they're the most vulnerable to a
+    curvature-informed optimizer fitting training-set idiosyncrasies
+    rather than a generalizable pattern. This gentler setting is a first
+    adjustment, not a validated final answer -- re-run kfold_cv_pinn.py
+    after any further change here to confirm the ion channel actually
+    recovers before trusting it.
     """
     lbfgs = torch.optim.LBFGS(
         model.parameters(), lr=1.0, max_iter=max_iter,

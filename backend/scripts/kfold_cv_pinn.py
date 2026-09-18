@@ -52,7 +52,7 @@ def build_mass_fractions(w_reg_tensor):
 
 
 def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
-                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+                          physics_weight, max_iter=100, history_size=50, n_calls=1):
     lbfgs = torch.optim.LBFGS(
         model.parameters(), lr=1.0, max_iter=max_iter,
         history_size=history_size, line_search_fn='strong_wolfe'

@@ -20,13 +20,6 @@ from scipy.stats import qmc
 # "environment" axis -- LHS doesn't handle mixed continuous/categorical
 # spaces cleanly, and GCR (solar minimum only, per the project's plan)
 # genuinely doesn't need a severity-like axis the way SPE does.
-#
-# Sample counts default to far fewer than the mono-energetic set's 1500:
-# this design space has 2-3 dimensions instead of 3, and (thickness,
-# w_regolith) coverage doesn't need to be re-earned per environment --
-# only the NEW axis (environment, severity) needs its own density.
-# Time a small batch (see run_pinn_batch_spectrum.py's guidance) before
-# committing to these counts; they are a starting point, not validated.
 # ============================================================
 
 VOXEL_SEED_BASE = 20260907 + 1_000_000  # offset from the mono-energetic

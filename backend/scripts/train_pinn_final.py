@@ -36,7 +36,7 @@ def build_mass_fractions(w_reg_tensor):
 
 
 def run_lbfgs_refinement(model, X_tensor, Y_target, target_variances, mass_fractions_batch,
-                          physics_weight, max_iter=200, history_size=50, n_calls=3):
+                          physics_weight, max_iter=100, history_size=50, n_calls=1):
     """Same refinement pass as train_pinn_geant4.py -- keep in sync so the
     production model uses the exact same recipe that was validated."""
     lbfgs = torch.optim.LBFGS(
