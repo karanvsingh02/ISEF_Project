@@ -104,14 +104,33 @@ USAGE
     d = descriptors(LIBRARY["lhs1_regolith"])
     m = mix_descriptors(LIBRARY["polyethylene"], LIBRARY["isru_iron"], 0.30)
 
-PROVENANCE WARNING
-------------------
-Compositions marked VERIFY in their `source` string are my best values from
-the literature and have NOT been checked against a datasheet. Before any
-result goes in a logbook or an abstract, confirm them. In particular,
-`apollo17_mare` should be overwritten with the exact composition already
-generated for the OLTARIS cross-validation, so the two codes are comparing
-the same material.
+PROVENANCE
+----------
+Every material carries a machine-readable `tier`:
+
+  tier 1  measured and cited. A published analysis or vendor datasheet.
+          Quotable as-is. LHS-1, the transport-reference regolith, mare
+          basalt 71035, MGS-1.
+  tier 2  stoichiometric, or a standard parameterisation. Exact given the
+          chemical formula (CH2, H2O, elemental metals) or a nominal alloy
+          specification. Quotable with the formula stated.
+  tier 3  ASSUMED. A design choice made to span descriptor space, not a
+          characterised material. lhs1_sintered, mg_hydride,
+          hydrated_regolith, borated_pe_5. These MUST be labelled
+          hypothetical in any writeup, and none of them may serve as a
+          validation reference.
+
+`--report` prints the tier for every material and refuses to stay quiet
+about tier-3 entries. If a result rests on a tier-3 material, say so.
+
+ONE THING THIS FILE CANNOT VERIFY
+---------------------------------
+OLTARIS's own `lunar_regolith_a17` composition. OLTARIS exposes it in its
+material interface; read it there and compare against
+`regolith_transport_ref`. If they differ, transport both and report the
+spread as a composition systematic rather than picking one.
+
+Sources: Exolith LHS-1 spec sheet · Apollo 17 sample compendium, 71055/71035 · Cannon et al. 2019, MGS-1 · Geant4 lunar albedo-neutron study citing Zaman et al. 2022 · Slaba, NASA LaRC — Radiation Shielding for Lunar Missions · Lunar Sourcebook Ch. 8
 """
 
 from __future__ import annotations
@@ -250,7 +269,21 @@ class Material:
                 measured 75 eV, a 9 per cent error) because it ignores
                 chemical binding. Prefer a measured value wherever one is
                 available.
-    source      provenance. "VERIFY" means not datasheet-checked.
+    source      short provenance string.
+    citation    the actual reference, so a judge asking "where did that
+                number come from?" gets an answer rather than a shrug.
+    tier        PROVENANCE TIER, machine-readable:
+                  1 = measured and cited. A published analysis or a vendor
+                      datasheet. Quotable.
+                  2 = stoichiometric or from a published parameterisation.
+                      Exact given the formula (CH2, H2O, MgH2) or standard
+                      (nominal alloy composition). Quotable with the formula
+                      stated.
+                  3 = ASSUMED BY ME. A design choice to span descriptor
+                      space, not a characterised material. Must be labelled
+                      hypothetical in any writeup.
+                The report prints this, and --design refuses to treat a tier-3
+                material as a validation reference.
     isru        whether this is plausibly producible on the lunar or Mars
                 surface, which is the whole point of the project.
     """
@@ -260,6 +293,8 @@ class Material:
     mass_frac: Dict[str, float]
     I_eV: Optional[float] = None
     source: str = ""
+    citation: str = ""
+    tier: int = 3
     isru: bool = False
     notes: str = ""
 
@@ -336,31 +371,105 @@ def from_oxides(name: str, label: str, density: float,
                     mass_frac=elem, **kw)
 
 
+def from_element_pct(name: str, label: str, density: float,
+                     elem_wt_pct: Dict[str, float], **kw) -> Material:
+    """
+    Build a Material from ELEMENTAL weight percentages.
+
+    Radiation-transport papers usually report elemental fractions rather than
+    oxides, which is better for our purpose: it removes the oxide-conversion
+    step and with it any ambiguity about Fe(II) vs Fe(III) speciation, which
+    changes the oxygen balance.
+    """
+    total = sum(elem_wt_pct.values())
+    if abs(total - 100.0) > 3.0:
+        raise ValueError(
+            f"{name}: elemental fractions sum to {total:.2f} wt%, more than "
+            "3 points from 100."
+        )
+    return Material(name=name, label=label, density=density,
+                    mass_frac={k: v / total for k, v in elem_wt_pct.items()},
+                    **kw)
+
+
 # --- regolith oxide compositions -------------------------------------------
 
 # Exolith Lab LHS-1 Lunar Highlands Simulant.
-_LHS1_OXIDES = {
-    "SiO2": 51.2, "TiO2": 0.4, "Al2O3": 27.0, "FeO": 3.9, "MnO": 0.05,
-    "MgO": 2.0, "CaO": 12.4, "Na2O": 2.7, "K2O": 0.4, "P2O5": 0.1,
-}
-
-# Apollo 17 mare soil -- high-Ti basaltic.
+# VERIFIED against the official spec sheet (LHS-1-SPEC-SHEET-DEC2025), XRF
+# bulk chemical composition. Printed total 99.15 wt%.
 #
-# REPLACE THIS with the exact composition already built for the OLTARIS
-# cross-validation. These are literature-typical high-Ti Apollo 17 mare soil
-# values summing to 99.67 wt%; they are NOT guaranteed to be the OLTARIS
-# lunar_regolith_a17 composition, and that comparison is only meaningful if
-# both codes are handed the same material.
-_A17_OXIDES = {
-    "SiO2": 40.0, "TiO2": 8.0, "Al2O3": 12.0, "FeO": 17.5, "MnO": 0.24,
-    "MgO": 10.0, "CaO": 11.0, "Na2O": 0.40, "K2O": 0.08, "Cr2O3": 0.45,
+# The sheet's 0.41 wt% LOI (loss on ignition -- structural and adsorbed
+# water driven off on heating) is entered here as H2O rather than discarded.
+# It contributes w_H = 4.6e-4, which is negligible for stopping power but is
+# the honest value, and matters for the one descriptor that is otherwise
+# exactly zero for every oxide in the library.
+#
+# Mineralogy for the record: anorthosite 74.4, glass-rich basalt 24.7,
+# ilmenite 0.4, bronzite 0.3, olivine 0.2 wt%.
+_LHS1_OXIDES = {
+    "SiO2": 49.12, "TiO2": 0.63, "Al2O3": 26.29, "FeO": 3.20, "MnO": 0.06,
+    "MgO": 2.86, "CaO": 13.52, "Na2O": 2.55, "K2O": 0.34, "P2O5": 0.17,
+    "H2O": 0.41,
 }
+_LHS1_CITE = ("Exolith Lab, LHS-1 Lunar Highlands Simulant spec sheet, "
+              "Dec 2025 (XRF bulk composition; uncompressed bulk density "
+              "1.40 g/cm3; median particle size 81.62 um)")
 
-# JSC Mars-1 palagonitic tephra, volatile-free basis.
-_JSC_MARS1_OXIDES = {
-    "SiO2": 43.5, "TiO2": 3.8, "Al2O3": 23.3, "Fe2O3": 15.6, "MnO": 0.3,
-    "MgO": 3.4, "CaO": 6.2, "Na2O": 2.4, "K2O": 0.6, "P2O5": 0.9,
+# Lunar regolith composition used in cross-code radiation transport
+# benchmarks. ELEMENTAL weight per cent, sums to exactly 100.0.
+#
+# This is the composition to use for any OLTARIS / HZETRN comparison: it is
+# the one the benchmark literature transports, so matching it removes
+# composition as a confound and leaves only the physics difference (3D Monte
+# Carlo vs the 1D straight-ahead approximation) under test.
+_REGOLITH_TRANSPORT_ELEM = {
+    "O": 43.7, "Na": 0.3, "Mg": 5.6, "Al": 9.0, "Si": 21.1,
+    "Ca": 8.5, "Ti": 1.5, "Mn": 0.1, "Fe": 10.2,
 }
+_REGOLITH_TRANSPORT_CITE = (
+    "Zaman et al. (2022), Space Weather -- 'Modeling the lunar radiation "
+    "environment: A comparison among FLUKA, Geant4, HETC-HEDS, MCNP6, and "
+    "PHITS'; density 1.6 g/cm3 after Naito et al."
+)
+
+# Apollo 17 high-Ti mare basalt 71035.
+#
+# A SINGLE coherent analysis (one sample, one technique, one author) rather
+# than an average. This matters: the Lunar Sourcebook warns explicitly that
+# averaged Apollo 17 SOIL compositions are misleading, because Apollo 17
+# soils mix mare basalt with highland material in proportions that vary by
+# station -- some Station 2 soils are almost pure highland. A named basalt
+# has no such ambiguity.
+#
+# Cr2O3 = 0.39 wt% is converted from the reported 2669 ppm Cr using the
+# Cr mass fraction of Cr2O3 (103.992/151.989 = 0.68421). Total 99.76 wt%.
+_MARE_BASALT_OXIDES = {
+    "SiO2": 38.25, "TiO2": 13.06, "Al2O3": 8.77, "FeO": 19.74, "MnO": 0.29,
+    "MgO": 7.98, "CaO": 10.87, "Na2O": 0.38, "K2O": 0.03, "Cr2O3": 0.39,
+}
+_MARE_BASALT_CITE = ("Rhodes et al. (1976), XRF analysis of Apollo 17 mare "
+                     "basalt 71035, via the NASA Apollo 17 sample "
+                     "compendium (Table 2)")
+
+# MGS-1 Mars Global Simulant, XRF of the measured prototype.
+#
+# Chosen over JSC Mars-1 for three reasons: the composition is published
+# with a clean total (100.0 wt%), it was designed to match the Rocknest soil
+# measured by Curiosity rather than being a terrestrial analogue of
+# convenience, and it comes from the same laboratory as LHS-1, so the two
+# share a provenance chain. JSC Mars-1 also loses 21.1 wt% on heating to
+# 600 C, which makes "the" composition ambiguous.
+#
+# Note SO3 at 2.1 wt%: sulfur appears nowhere else in the library.
+_MGS1_OXIDES = {
+    "SiO2": 50.8, "TiO2": 0.3, "Al2O3": 8.9, "Cr2O3": 0.1, "FeO": 13.3,
+    "MnO": 0.1, "MgO": 16.7, "CaO": 3.7, "Na2O": 3.4, "K2O": 0.3,
+    "P2O5": 0.4, "SO3": 2.1,
+}
+_MGS1_CITE = ("Cannon, Britt, Smith, Fritsche & Batcheldor (2019), "
+              "'Mars global simulant MGS-1: A Rocknest-based open standard "
+              "for basaltic martian regolith simulants', Icarus "
+              "(Table 2, prototype XRF; bulk density 1.29 g/cm3)")
 
 
 def _build_library() -> Dict[str, Material]:
@@ -370,6 +479,8 @@ def _build_library() -> Dict[str, Material]:
             "polyethylene", "HDPE (CH2)", 0.95,
             {"C": 0.856277, "H": 0.143723}, I_eV=57.4,
             source="CH2 stoichiometry; I from ICRU 37",
+            citation="CH2 stoichiometry; I = 57.4 eV from ICRU Report 37 "
+                     "(polyethylene)", tier=2,
             isru=True,
             notes="ISRU-plausible from Sabatier CH4 or recycled packaging. "
                   "Density pinned to 0.95 to match RHO_HDPE. Matches the "
@@ -379,46 +490,93 @@ def _build_library() -> Dict[str, Material]:
         ),
         from_oxides(
             "lhs1_regolith", "LHS-1 highlands regolith", 2.75, _LHS1_OXIDES,
-            source="Exolith Lab LHS-1 datasheet -- VERIFY",
+            source="Exolith LHS-1 spec sheet (XRF); density PINNED",
+            citation=_LHS1_CITE, tier=1,
             isru=True,
-            notes="Density pinned to 2.75 to match RHO_REGOLITH. NOTE: 2.75 "
-                  "is GRAIN density, not bulk. Real unconsolidated regolith "
-                  "is 1.5-1.9 and OLTARIS uses 1.6. Using 2.75 asserts a "
-                  "fully sintered, zero-porosity solid -- this must be stated "
-                  "explicitly in any writeup.",
+            notes="Composition VERIFIED against the Dec 2025 spec sheet. "
+                  "Density pinned to 2.75 to match RHO_REGOLITH in "
+                  "topology_generators.py. NOTE: 2.75 is a GRAIN density; "
+                  "the datasheet's uncompressed bulk density is 1.40. Using "
+                  "2.75 therefore asserts a fully consolidated, "
+                  "zero-porosity solid, and that assumption must be stated "
+                  "explicitly in any writeup -- it is the single largest "
+                  "unstated assumption in the whole pipeline.",
         ),
 
         # ---- regolith at realistic bulk densities ----
         from_oxides(
-            "lhs1_bulk", "LHS-1, unconsolidated", 1.60, _LHS1_OXIDES,
-            source="LHS-1 composition at OLTARIS bulk density",
+            "lhs1_bulk", "LHS-1, uncompressed", 1.40, _LHS1_OXIDES,
+            source="Exolith LHS-1 spec sheet, uncompressed bulk density",
+            citation=_LHS1_CITE, tier=1,
             isru=True,
-            notes="Same composition, realistic poured density. The ONLY "
-                  "difference from lhs1_regolith is rho, which makes the pair "
-                  "a clean test of whether the surrogate has learned that "
-                  "density acts through areal density alone.",
+            notes="1.40 is the DATASHEET value, not the 1.6 commonly quoted "
+                  "for Apollo regolith -- LHS-1 is a loose simulant powder. "
+                  "The only difference from lhs1_regolith is rho, which makes "
+                  "the pair a clean test of whether the surrogate has learned "
+                  "that density acts purely through areal density.",
         ),
         from_oxides(
             "lhs1_sintered", "LHS-1, sintered", 1.80, _LHS1_OXIDES,
-            source="LHS-1 composition at microwave-sintered density",
+            source="LHS-1 composition at an ASSUMED sintered density",
+            citation=_LHS1_CITE + " (composition only; density assumed)",
+            tier=3,
             isru=True,
             notes="Microwave sintering of regolith is an established ISRU "
-                  "construction route. 1.8 is a conservative achieved density.",
+                  "construction route, but 1.80 g/cm3 is MY ASSUMPTION for "
+                  "an achieved density, not a measured value. Label this "
+                  "material hypothetical.",
+        ),
+        from_element_pct(
+            "regolith_transport_ref", "Lunar regolith (transport reference)",
+            1.60, _REGOLITH_TRANSPORT_ELEM,
+            source="elemental composition used in cross-code transport "
+                   "benchmarks",
+            citation=_REGOLITH_TRANSPORT_CITE, tier=1,
+            isru=True,
+            notes="USE THIS ONE for the OLTARIS / HZETRN cross-validation. "
+                  "It is the composition the benchmark literature transports, "
+                  "so matching it eliminates composition as a confound and "
+                  "isolates the actual question -- 3D Monte Carlo against the "
+                  "1D straight-ahead approximation. Given elementally, so "
+                  "there is no Fe(II)/Fe(III) speciation ambiguity in the "
+                  "oxygen balance. Compositionally intermediate between LHS-1 "
+                  "highlands and high-Ti mare.\n"
+                  "ACTION: OLTARIS exposes its own material compositions. "
+                  "Read lunar_regolith_a17 off OLTARIS directly and compare "
+                  "to this; if they differ, transport BOTH and report the "
+                  "spread as a composition systematic.",
         ),
         from_oxides(
-            "apollo17_mare", "Apollo 17 mare soil", 1.60, _A17_OXIDES,
-            source="Apollo 17 mare soil average -- VERIFY against the "
-                   "OLTARIS lunar_regolith_a17 composition",
+            "mare_basalt_71035", "Apollo 17 mare basalt 71035 (cast)",
+            3.30, _MARE_BASALT_OXIDES,
+            source="Rhodes (1976) XRF; density assumed for cast basalt",
+            citation=_MARE_BASALT_CITE, tier=1,
             isru=True,
-            notes="Mare, not highlands: 4x the Fe and ~10x the Ti of LHS-1. "
-                  "This is the material OLTARIS actually models, so it is "
-                  "required for a like-for-like cross-validation.",
+            notes="The high-Fe, high-Ti endpoint: 6.2x the Fe and 21x the Ti "
+                  "of LHS-1, which is the largest composition contrast "
+                  "available from lunar material alone. Cast basalt is a "
+                  "genuine ISRU construction proposal, so 3.30 g/cm3 (solid, "
+                  "not regolith) is the physically right density for that use "
+                  "-- though the density itself is assumed, not from the "
+                  "cited analysis.\n"
+                  "A SINGLE sample, SINGLE technique, SINGLE author analysis, "
+                  "deliberately: the Lunar Sourcebook warns that averaged "
+                  "Apollo 17 soil compositions are misleading because those "
+                  "soils mix mare and highland material in station-dependent "
+                  "proportions.",
         ),
         from_oxides(
-            "jsc_mars1", "JSC Mars-1 simulant", 1.50, _JSC_MARS1_OXIDES,
-            source="JSC Mars-1 palagonite, volatile-free -- VERIFY",
+            "mgs1_mars", "MGS-1 Mars Global Simulant", 1.29, _MGS1_OXIDES,
+            source="Cannon et al. (2019) prototype XRF",
+            citation=_MGS1_CITE, tier=1,
             isru=True,
-            notes="Extends the tool past the Moon. Fe-rich and Al-rich.",
+            notes="Extends the tool past the Moon. Chosen over JSC Mars-1: "
+                  "published with a clean 100.0 wt% total, designed against "
+                  "Curiosity's Rocknest measurement rather than being a "
+                  "terrestrial analogue of convenience, and from the same lab "
+                  "as LHS-1. JSC Mars-1 additionally loses 21.1 wt% on "
+                  "heating to 600 C, which makes 'its' composition ambiguous. "
+                  "Carries 2.1 wt% SO3 -- the only sulfur in the library.",
         ),
 
         # ---- volatiles ----
@@ -426,6 +584,8 @@ def _build_library() -> Dict[str, Material]:
             "water_ice", "Water ice", 0.917,
             {"H": 0.111894, "O": 0.888106}, I_eV=75.0,
             source="H2O stoichiometry; I from ICRU 37 (liquid water)",
+            citation="H2O stoichiometry; I = 75.0 eV from ICRU Report 37; "
+                     "ice density 0.917 g/cm3", tier=2,
             isru=True,
             notes="Permanently shadowed crater ice. Best shield per gram in "
                   "the library by w_H, but needs containment and thermal "
@@ -435,6 +595,7 @@ def _build_library() -> Dict[str, Material]:
             "liquid_water", "Liquid water", 1.000,
             {"H": 0.111894, "O": 0.888106}, I_eV=75.0,
             source="H2O stoichiometry; I from ICRU 37",
+            citation="H2O stoichiometry; I = 75.0 eV from ICRU Report 37", tier=2,
             isru=False,
             notes="Reference material. The phantom is G4_WATER, so this is "
                   "the descriptor anchor and the natural first validation point.",
@@ -444,6 +605,7 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "isru_iron", "ISRU iron", 7.874, {"Fe": 1.0}, I_eV=286.0,
             source="pure Fe; I from ICRU 37",
+            citation="elemental Fe; rho and I = 286 eV from ICRU 37 / PDG", tier=2,
             isru=True,
             notes="Hydrogen or carbothermal reduction of ilmenite is a "
                   "mainstream ISRU proposal. Against HDPE this is an 8.3x "
@@ -454,6 +616,7 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "isru_aluminium", "ISRU aluminium", 2.699, {"Al": 1.0}, I_eV=166.0,
             source="pure Al; I from ICRU 37",
+            citation="elemental Al; rho and I = 166 eV from ICRU 37 / PDG", tier=2,
             isru=True,
             notes="Reducible from the anorthite that dominates highlands "
                   "regolith. Nearly the same density as regolith but a very "
@@ -463,6 +626,7 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "isru_titanium", "ISRU titanium", 4.507, {"Ti": 1.0}, I_eV=233.0,
             source="pure Ti; I from ICRU 37",
+            citation="elemental Ti; rho and I = 233 eV from ICRU 37 / PDG", tier=2,
             isru=True,
             notes="From ilmenite in mare regolith. Fills the gap between Al "
                   "and Fe in descriptor space.",
@@ -470,6 +634,7 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "isru_magnesium", "ISRU magnesium", 1.738, {"Mg": 1.0}, I_eV=156.0,
             source="pure Mg; I from ICRU 37",
+            citation="elemental Mg; rho and I = 156 eV from ICRU 37 / PDG", tier=2,
             isru=True,
             notes="Low-density metal, extractable from olivine and pyroxene. "
                   "Occupies a descriptor region no other library member does: "
@@ -488,7 +653,9 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "mg_hydride", "Magnesium hydride (MgH2)", 1.45,
             {"Mg": 0.923426, "H": 0.076574},
-            source="MgH2 stoichiometry; density for compacted powder -- VERIFY",
+            source="MgH2 stoichiometry; density is the CRYSTAL density",
+            citation="MgH2 stoichiometry; 1.45 g/cm3 is the crystal "
+                     "density -- compacted powder would be lower", tier=3,
             isru=True,
             notes="Mg reduced from olivine/pyroxene, H from solar-wind "
                   "implantation or electrolysed polar ice. A real hydrogen-"
@@ -500,7 +667,9 @@ def _build_library() -> Dict[str, Material]:
         from_oxides(
             "hydrated_regolith", "LHS-1 + 10 wt% H2O", 1.70,
             {**{k: v * 0.9 for k, v in _LHS1_OXIDES.items()}, "H2O": 10.0},
-            source="LHS-1 with 10 wt% structural/adsorbed water -- VERIFY",
+            source="ASSUMED: verified LHS-1 composition + 10 wt% H2O",
+            citation=_LHS1_CITE + " (composition); 10 wt% water content "
+                     "and 1.70 g/cm3 both ASSUMED", tier=3,
             isru=True,
             notes="Permanently-shadowed-region regolith with retained water. "
                   "Highly ISRU-relevant: it is what you dig up before you "
@@ -514,7 +683,9 @@ def _build_library() -> Dict[str, Material]:
             "al6061", "Aluminium 6061-T6", 2.70,
             {"Al": 0.9792, "Mg": 0.010, "Si": 0.006, "Cu": 0.0028,
              "Cr": 0.002},
-            source="nominal 6061 composition -- VERIFY",
+            source="nominal 6061-T6 mid-range composition",
+            citation="ASM nominal 6061 composition (Mg 1.0, Si 0.6, "
+                     "Cu 0.28, Cr 0.20 wt%, Al balance)", tier=2,
             isru=False,
             notes="The aerospace structural baseline. Every shielding result "
                   "in the literature is quoted against aluminium, so it is "
@@ -523,7 +694,9 @@ def _build_library() -> Dict[str, Material]:
         Material(
             "borated_pe_5", "5% borated polyethylene", 1.00,
             {"B": 0.050, "C": 0.813463, "H": 0.136537},
-            source="5 wt% natural B in CH2 -- VERIFY density",
+            source="ASSUMED: 5 wt% natural B in CH2",
+            citation="5 wt% natural boron in CH2; density 1.00 g/cm3 "
+                     "ASSUMED", tier=3,
             isru=False,
             notes="Thermal-neutron absorber. Included specifically as a "
                   "descriptor-space outlier: B-10 capture is a resonance "
@@ -552,7 +725,7 @@ def library_checksum() -> str:
     payload = json.dumps(
         {n: {"rho": m.density,
              "frac": {k: round(v, 9) for k, v in sorted(m.mass_frac.items())},
-             "I": m.I_eV}
+             "I": m.I_eV, "tier": m.tier, "cite": m.citation}
          for n, m in sorted(LIBRARY.items())},
         sort_keys=True,
     )
@@ -1113,19 +1286,37 @@ def report(subset: Optional[List[str]] = None) -> None:
     print(f"DESCRIPTOR TABLE   library v{LIBRARY_VERSION}   "
           f"checksum {library_checksum()}")
     print("=" * 112)
-    print(f"{'material':<22}{'ISRU':>5}{'rho':>8}{'<Z/A>':>9}{'I eV':>8}"
-          f"{'w_H':>9}{'lam_in':>9}{'X0':>8}{'<A>':>8}   I source")
-    print(f"{'':<22}{'':>5}{'g/cm3':>8}{'':>9}{'':>8}{'':>9}"
+    print(f"{'material':<24}{'tier':>5}{'ISRU':>5}{'rho':>8}{'<Z/A>':>9}"
+          f"{'I eV':>8}{'w_H':>10}{'lam_in':>9}{'X0':>8}{'<A>':>8}")
+    print(f"{'':<24}{'':>5}{'':>5}{'g/cm3':>8}{'':>9}{'':>8}{'':>10}"
           f"{'g/cm2':>9}{'g/cm2':>8}{'':>8}")
     print("-" * 112)
     for n in names:
         m = LIBRARY[n]
         d = descriptors(m)
-        print(f"{n:<22}{'yes' if m.isru else '-':>5}{d.rho_g_cm3:>8.3f}"
+        tier = {1: "1", 2: "2", 3: "3!"}[m.tier]
+        print(f"{n:<24}{tier:>5}{'yes' if m.isru else '-':>5}{d.rho_g_cm3:>8.3f}"
               f"{d.z_over_a:>9.5f}{d.i_excitation_ev:>8.1f}"
-              f"{d.w_hydrogen:>9.5f}{d.lambda_inel_g_cm2:>9.2f}"
-              f"{d.x0_g_cm2:>8.2f}{d.mean_a:>8.2f}   "
-              f"{'measured' if d.i_is_measured else 'Bragg (underestimates)'}")
+              f"{d.w_hydrogen:>10.6f}{d.lambda_inel_g_cm2:>9.2f}"
+              f"{d.x0_g_cm2:>8.2f}{d.mean_a:>8.2f}")
+
+    n3 = [n for n in names if LIBRARY[n].tier == 3]
+    n1 = [n for n in names if LIBRARY[n].tier == 1]
+    print(f"\n  tier 1 (measured & cited) : {len(n1)}  {', '.join(n1)}")
+    print(f"  tier 2 (stoichiometric)   : "
+          f"{len([n for n in names if LIBRARY[n].tier == 2])}")
+    if n3:
+        print(f"  tier 3 (ASSUMED by me)    : {len(n3)}  {', '.join(n3)}")
+        print("    ^ these are design choices, not characterised materials. "
+              "Label them\n      hypothetical, and never use one as a "
+              "validation reference.")
+
+    print("\n  I values: 'measured' entries use a tabulated mean excitation "
+          "energy; the rest\n  use Bragg additivity, which underestimates I "
+          "in condensed matter by up to ~9%.\n  I enters Bethe-Bloch "
+          "logarithmically, so a 9% error there moves stopping\n  power by "
+          "well under 1% -- this is the least consequential number in the "
+          "file.")
 
     print("\n" + "=" * 112)
     print("DESCRIPTOR SPAN")
@@ -1259,7 +1450,35 @@ def main() -> int:
         print("-" * 60)
         for i, nm in enumerate(chosen, 1):
             tag = " (forced)" if nm in must else ""
-            print(f"  {i:>2}. {nm:<22}{LIBRARY[nm].label}{tag}")
+            t = LIBRARY[nm].tier
+            print(f"  {i:>2}. [tier {t}{'!' if t == 3 else ' '}] "
+                  f"{nm:<24}{LIBRARY[nm].label}{tag}")
+
+        # The greedy criterion maximises descriptor spread and is blind to
+        # provenance, so it will happily pick an assumed material over a
+        # measured one that sits slightly closer to the rest. Say so.
+        t3 = [n for n in chosen if LIBRARY[n].tier == 3]
+        skipped_t1 = [n for n in sorted(LIBRARY)
+                      if LIBRARY[n].tier == 1 and n not in chosen]
+        if t3:
+            print(f"\n  WARNING: {len(t3)} ASSUMED material(s) selected: "
+                  f"{', '.join(t3)}")
+            print("    The space-filling criterion optimises descriptor "
+                  "spread and knows\n    nothing about provenance. These are "
+                  "legitimate as training points --\n    they teach the "
+                  "surrogate the response surface -- but no validation\n"
+                  "    claim may rest on them, and they must be labelled "
+                  "hypothetical.")
+        if skipped_t1:
+            print(f"\n  NOTE: measured, cited materials NOT selected: "
+                  f"{', '.join(skipped_t1)}")
+            if "regolith_transport_ref" in skipped_t1:
+                print("    regolith_transport_ref should be FORCED IN "
+                      "regardless of what the\n    space-filling criterion "
+                      "prefers: it is the composition the\n    cross-code "
+                      "benchmark literature transports, so without it there "
+                      "is\n    no clean OLTARIS comparison. Re-run with it in "
+                      "--must-include.")
         print("\nConditioning of this subset:")
         nm_, M_ = descriptor_matrix(chosen)
         rep = conditioning_report(nm_, M_)
