@@ -275,14 +275,24 @@ def gcr_species_event_weights(n_points=60, modulation_potential_MV=400.0):
     Weighting by integrated flux rather than by raw abundance matters
     because the modulated spectra have different shapes over the sampled
     range, so equal abundance does not mean equal sampled flux.
+
+    UNITS -- the easy mistake here. gcr_flux_vs_energy_per_nucleon returns
+    dJ/dT_pn, a density in PER-NUCLEON energy. The number flux is therefore
+    the integral against dT_pn, NOT against dT_total. Integrating against
+    the total-energy grid (which gcr_species_energy_table returns, because
+    that is what GPS needs) silently multiplies each species by its A --
+    a factor of 56 for iron, which would have inflated iron's weight, and
+    hence its share of the aggregated dose equivalent, by the same factor.
     """
+    trapz = np.trapezoid if hasattr(np, "trapezoid") else np.trapz
+    T_pn = per_nucleon_energy_grid_gcr(n_points=n_points)
+
     integ = {}
     for s in SPECIES:
-        E, F = gcr_species_energy_table(
-            s, n_points=n_points,
-            modulation_potential_MV=modulation_potential_MV)
-        integ[s] = float(np.trapezoid(F, E)) if hasattr(np, "trapezoid") \
-            else float(np.trapz(F, E))
+        F = gcr_flux_vs_energy_per_nucleon(
+            s, T_pn, modulation_potential_MV=modulation_potential_MV)
+        integ[s] = float(trapz(F, T_pn))
+
     tot = sum(integ.values())
     return {s: v / tot for s, v in integ.items()}
 
